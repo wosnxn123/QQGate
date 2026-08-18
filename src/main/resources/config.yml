@@ -4,70 +4,66 @@ config-version: 4
 # ============================================================
 #  QQGate 配置  |  改完用 /qqgateadmin reload 生效（连接段除外）
 # ============================================================
+
 onebot:
   # 连接模式:
   #   reverse-ws —— 机器人主动连我方（NapCat/LLOneBot 常用，推荐）
   #   forward-ws —— 我方主动连机器人（Lagrange 常用）
   mode: reverse-ws
-  listen-host: 0.0.0.0        # reverse-ws 监听地址
-  listen-port: 6700           # reverse-ws 监听端口
+  listen-host: 0.0.0.0              # reverse-ws 监听地址（同机建议 127.0.0.1）
+  listen-port: 6700                 # reverse-ws 监听端口
   forward-url: "ws://127.0.0.1:3001"  # forward-ws 目标地址
-  access-token: ""            # 鉴权令牌，必须与机器人端一致，留空=不鉴权（不建议）
-  reconnect-seconds: 5        # forward-ws 断线重连间隔
-  # 超过该秒数未收到 heartbeat 事件判定机器人离线（OneBot 默认心跳 15s）
-  heartbeat-timeout-seconds: 60
-  # 只信任这个机器人QQ号发来的事件，0 = 不限制
-  allowed-self-id: 0
+  access-token: ""                  # 鉴权令牌，必须与机器人端一致；留空=不鉴权（不建议）
+  reconnect-seconds: 5              # forward-ws 断线重连间隔（秒）
+  heartbeat-timeout-seconds: 60     # 超过该秒数无事件判定机器人离线（OneBot 默认心跳 15s）
+  allowed-self-id: 0                # 只信任该机器人QQ号的事件；0 = 不限制
 
 groups:
-  # true = 任何群都可执行全部指令（忽略下方白名单）；默认 false 只用白名单
-  allow-all: false
-  # 群白名单：只响应这些群的一切指令（allow-all: true 时失效）
-  allowed: [123456789]
-  # 推荐群（可选）：踢出页置顶显示并标 ★；留空则按白名单顺序展示
-  recommended: ""
-  reply-in-source-group: true
+  allow-all: false                  # true = 任何群可执行全部指令（忽略白名单）
+  allowed: [123456789]              # 群白名单：只响应这些群的一切指令
+  recommended: ""                   # 推荐群（可选）：踢出页置顶显示并标 ★；留空按白名单顺序
+  reply-in-source-group: true       # 回复发回来源群
 
 private:
-  # 私聊总闸：true = 私聊机器人可用全部玩家指令（绑定/查询/解绑/帮助），
-  # 回执走私聊。默认 false = 私聊对普通玩家完全无响应。
+  # 私聊总闸：true = 私聊机器人可用全部玩家指令（绑定/查询/解绑/帮助），回执走私聊。
+  # 默认 false = 私聊对普通玩家完全无响应。
   # 不影响管理员：白名单QQ的私聊管理指令由 admins.respond.private 单独控制。
   allow-bind: false
 
 admins:
-  # QQ 管理员白名单：这些QQ可执行管理员指令（查/解绑/全解绑/绑定/状态/帮助）
-  # 为空 = QQ 侧管理员功能整体关闭
+  # QQ 管理员白名单：这些QQ可执行管理员指令；为空 = QQ 侧管理功能整体关闭
+  # 指令语法：查/解绑 <目标>/解绑 <名> <QQ>/全解绑 <目标>/绑定 <名> <QQ>/状态/帮助
   qq: []
-  # 管理员指令通道开关（语法：查/解绑/全解绑/绑定 <名> <QQ>/状态/帮助）
   respond:
-    group: true          # 群内响应管理员指令
-    private: true        # 私聊响应管理员指令
+    group: true                     # 群内响应管理员指令
+    private: true                   # 私聊响应管理员指令
 
 bind:
   # ---- 验证码 ----
-  code-length: 4              # 位数（4~8）
-  expire-minutes: 5           # 有效期（分钟）
-  expire-display: both        # both=时长+时刻 | relative | absolute
-  time-format: "HH:mm"
-  time-zone: "default"        # "default"=跟随服务器，或 "Asia/Shanghai"
-  # /qqgate bind 游戏内验证码回显（可用 {code} {group} {expire_minutes} {expire_time}）
+  code-length: 4                    # 位数（4~8）
+  expire-minutes: 5                 # 有效期（分钟）
+  expire-display: both              # both=时长+时刻 | relative | absolute
+  time-format: "HH:mm"              # 绝对时刻格式（Java DateTimeFormatter 语法）
+  time-zone: "default"              # "default"=跟随服务器，或 IANA 名如 "Asia/Shanghai"
+  # /qqgate bind 游戏内验证码回显（可用占位符 {code} {group} {expire_minutes} {expire_time}）
   code-message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <yellow>你的验证码：<green><b>绑定 {code}</b></green>\n<gray>发送到群 <aqua>{group}</aqua> 完成绑定，有效期 {expire_minutes} 分钟（{expire_time} 前有效）</gray>"
 
   # ---- 数量限制 ----
-  max-per-qq: 1               # 一个QQ最多绑几个游戏账号
-  max-per-player: 1           # 一个游戏账号最多绑几个QQ
+  max-per-qq: 1                     # 一个QQ最多绑几个游戏账号
+  max-per-player: 1                 # 一个游戏账号最多绑几个QQ
   # 达到上限时: reject=拒绝并提示 | replace=挤掉最早的绑定（自动换绑）
   limit-policy: reject
 
+  # ---- 行为 ----
   # 自助解绑开关（群+私聊一起管）：true = 玩家可发「解绑 <自己的账号名>」解绑；
   # 无参「解绑」始终只列列表。false = 解绑指令静默忽略，找管理员处理。
   self-unbind: false
-  cooldown-seconds: 10        # 指令冷却（按QQ计，绑定/解绑共享计时，错码也计入）
-
+  cooldown-seconds: 10              # 指令冷却（按QQ计，绑定/解绑共享计时，错码也计入）
 
 kick:
   # 断开前延迟（毫秒）。拦截点已改为 PlayerLoginEvent（客户端已就绪），
   # 通常保持 0；仅当仍偶发"连接中断"时再试 300~800。
+  delay-ms: 0
   # 踢出页文案（\n 换行），占位符:
   #   {code} {player} {expire_minutes} {expire_time} {expire_line}
   #   {group_line} 群引导行（推荐群★置顶+全白名单 / allow-all 提示语 + 私聊提示）
@@ -75,15 +71,17 @@ kick:
   message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <red>你还未绑定QQ，暂时无法进入服务器</red>\n\n<white>{group_line}</white>\n<gray>发送：</gray><green><b>绑定 {code}</b></green>\n\n<yellow>验证码有效期 <white>{expire_minutes}</white> 分钟（<white>{expire_time}</white> 前有效）</yellow>\n<gray>绑定成功后重新连接即可进入服务器</gray>"
 
 storage:
-  file: bindings.json         # 相对 plugins/QQGate/
-  pretty-print: true
+  file: bindings.json               # 绑定数据文件（相对 plugins/QQGate/，原子写入）
+  pretty-print: true                # JSON 缩进，便于人工检查/备份
 
-debug: false                  # true 时输出每条 OneBot 帧到控制台
+debug: false                        # true 时输出每条 OneBot 帧到控制台（排障用）
+
 # QQ 指令回复文案（\n 换行）。群回复自动引用触发消息并 @发送者；私聊为纯文本。
 # 占位符: {at}=艾特 {player}=游戏名 {qq}=QQ号 {count}/{max}=已绑/上限
 #         {remaining}=还可绑定几个 {old_player}=被挤下的玩家 {seconds}=冷却秒数
 #         {target}=查询/解绑目标 {result}/{detail}=代码生成的结果文本
 messages:
+  # ---- 玩家文案 ----
   bound: "{at} 绑定成功！\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个\n现在可以重新进入服务器了"
   replaced: "{at} 绑定成功（已自动替换旧绑定，挤下：{old_player}）\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个"
   already-bound: "{at} 该QQ已绑定游戏账号 {player}，无需重复绑定"
@@ -98,6 +96,8 @@ messages:
   self-unbind-list: "{at} {result}"
   # 帮助基础文案；解绑行由代码按 bind.self-unbind 动态追加，勿写进此模板
   help: "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定"
+
+  # ---- 管理员文案 ----
   admin-help: "{at} 管理员指令：\n查 <玩家名|QQ号> —— 查询绑定\n解绑 <玩家名|QQ号> —— 解绑（多条会列出）\n解绑 <玩家名> <QQ号> —— 精确解绑\n全解绑 <玩家名|QQ号> —— 清空全部绑定\n绑定 <玩家名> <QQ号> —— 代绑\n状态 —— 连接与统计"
   admin-lookup: "{at} {result}"
   admin-lookup-empty: "{at} {target} 未找到绑定"
