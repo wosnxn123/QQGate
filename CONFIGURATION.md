@@ -45,8 +45,27 @@ groups:
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `allow-all` | `false` | `true` 时任何群都能执行绑定/解绑（忽略白名单）。默认关闭 |
-| `allowed` | `[123456789]` | 群白名单。**踢出页显示的群号取列表第一个**，把主群放第一位 |
 | `reply-in-source-group` | `true` | 回复发回来源群 |
+
+---
+## admins — QQ 管理员
+
+```yaml
+admins:
+  qq: [10001, 20002]
+  respond:
+    group: true
+    private: true
+```
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `qq` | `[]` | QQ 管理员白名单。这些 QQ 可在群/私聊执行管理员指令（`查`/`解绑`/`全解绑`/`绑定 <名> <QQ>`/`状态`/`帮助`）。空 = QQ 侧管理功能整体关闭 |
+| `respond.group` | `true` | 群内是否响应管理员指令 |
+| `respond.private` | `true` | 私聊是否响应管理员指令 |
+
+管理员指令详解见 README 的指令表。非白名单 QQ 发送管理员语法按普通玩家消息处理（无权限提升）。
+
 
 ---
 
@@ -178,6 +197,20 @@ storage:
 **占位符**：`{at}` @发送者、`{player}` 游戏名、`{qq}` QQ 号、`{count}/{max}` 已绑/上限、`{remaining}` 剩余额度、`{old_player}` 被挤下的玩家、`{seconds}` 冷却秒数。
 
 ---
+
+新增文案键：
+
+| 键 | 触发场景 |
+|---|---|
+| `already-bound` | 重复绑定同一对（幂等） |
+| `self-unbind-notfound` | 指定解绑的账号不在自己名下 |
+| `self-unbind-list` | 无参解绑/查询的绑定列表 |
+| `help` / `admin-help` | 玩家/管理员帮助 |
+| `admin-lookup` / `admin-lookup-empty` | 管理员查询结果/未找到 |
+| `admin-unbind-notfound` / `admin-unbind-exact-ok` / `admin-unbind-ambiguous` | 管理员解绑：未找到/精确成功/多条列表 |
+| `admin-unbindall-ok` | 全解绑成功 |
+| `admin-bind-ok` / `admin-bind-no-player` / `admin-bind-fail` | 管理员代绑：成功/玩家无记录/失败 |
+| `admin-status` | 管理员状态查询 |
 
 ## debug
 

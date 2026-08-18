@@ -259,4 +259,82 @@ class OneBotE2ETest {
         assertNull(bot.received.poll(1, TimeUnit.SECONDS), "private bind must be ignored when disabled");
         assertFalse(store.isBound(u));
     }
+
+    // ================= 管理员指令 E2E =================
+
+    private static String groupEventAdmin(long group, long user, String raw) {
+        return "{\"time\":1,\"self_id\":999,\"post_type\":\"message\",\"message_type\":\"group\","
+                + "\"sub_type\":\"normal\",\"message_id\":77,\"group_id\":" + group
+                + ",\"user_id\":" + user + ",\"raw_message\":\"" + raw + "\"}";
+    }
+
+    @Test
+    void adminLookupWorksForWhitelistedQq() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        UUID u = UUID.randomUUID();
+        var code = svc.ensureCode(u, "Steve", System.currentTimeMillis());
+        svc.attemptBind(code.code(), 10001L, System.currentTimeMillis() + 100);
+
+        bot.send(groupEventAdmin(777, 90001, "查 Steve"));
+        String reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("Steve"), reply);
+        assertTrue(reply.contains("10001"), reply);
+    }
+
+    @Test
+    void adminCommandsIgnoredForNonAdmin() throws Exception {
+        UUID u = UUID.randomUUID();
+        var code = svc.ensureCode(u, "Steve", System.currentTimeMillis());
+        svc.attemptBind(code.code(), 10001L, System.currentTimeMillis() + 100);
+
+        bot.send(groupEventAdmin(777, 88888, "查 Steve")); // 非白名单
+        assertNull(bot.received.poll(1, TimeUnit.SECONDS), "admin cmd must be ignored for non-admin");
+        assertTrue(store.isBound(u)); // 数据未动
+    }
+
+    @Test
+    void adminUnbindSingleAndAll() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        svc.updateSettings(new BindSettings.Builder().maxPerQq(2).cooldownSeconds(0).build());
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        var ca = svc.ensureCode(a, "Steve", System.currentTimeMillis());
+        svc.attemptBind(ca.code(), 10001L, System.currentTimeMillis() + 100);
+        var cb = svc.ensureCode(b, "Alex", System.currentTimeMillis());
+        svc.attemptBind(cb.code(), 10001L, System.currentTimeMillis() + 200);
+
+        // 单参 QQ 形态多条 → 列表
+        bot.send(groupEventAdmin(777, 90001, "解绑 10001"));
+        String reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("2 条绑定"), reply);
+        assertTrue(reply.contains("Steve"), reply);
+        assertTrue(store.isBound(a)); // 未执行
+
+        // 精确解绑
+        bot.send(groupEventAdmin(777, 90001, "解绑 Steve 10001"));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("已解绑"), reply);
+        assertFalse(store.isBound(a));
+        assertTrue(store.isBound(b));
+
+        // 全解绑
+        bot.send(groupEventAdmin(777, 90001, "全解绑 10001"));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("已清空"), reply);
+        assertFalse(store.isBound(b));
+    }
+
+    @Test
+    void adminUnbindAllIgnoresChannelWhenDisabled() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        cfg.put("admins.respond.group", false); // 群内管理通道关闭
+        UUID u = UUID.randomUUID();
+        var code = svc.ensureCode(u, "Steve", System.currentTimeMillis());
+        svc.attemptBind(code.code(), 10001L, System.currentTimeMillis() + 100);
+
+        bot.send(groupEventAdmin(777, 90001, "全解绑 10001"));
+        assertNull(bot.received.poll(1, TimeUnit.SECONDS), "admin cmd must respect channel switch");
+        assertTrue(store.isBound(u));
+    }
 }
+

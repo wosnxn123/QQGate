@@ -320,6 +320,29 @@ public final class BindService {
         return ok;
     }
 
+    /**
+     * 玩家指定解绑：按账号名解自己 QQ 名下的绑定（不区分大小写）。
+ * 只影响发送者名下记录，不可越权。返回删除条数。
+     */
+    public int selfUnbindByName(long qq, String name) {
+        if (!settings.selfUnbind) return 0;
+        int n = 0;
+        for (BindStore.Binding b : store.findByQq(qq)) {
+            if (b.name().equalsIgnoreCase(name) && store.removeExact(b.uuid(), qq)) {
+                n++;
+            }
+        }
+        if (n > 0) store.save();
+        return n;
+    }
+
+    /** 管理员精确解绑：删 uuid+qq 唯一确定的一条。返回是否删除。 */
+    public boolean unbindExact(UUID uuid, long qq) {
+        boolean ok = store.removeExact(uuid, qq);
+        if (ok) store.save();
+        return ok;
+    }
+
     public BindStore store() {
         return store;
     }

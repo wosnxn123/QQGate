@@ -29,6 +29,14 @@ private:
   # 是否允许私聊机器人发送「绑定 <码>」完成绑定（回执走私聊，不刷群）
   allow-bind: false
 
+admins:
+  # QQ 管理员白名单：这些QQ可执行管理员指令（查/解绑/全解绑/绑定/状态/帮助）
+  # 为空 = QQ 侧管理员功能整体关闭
+  qq: []
+  # 管理员指令通道开关
+  respond:
+    group: true          # 群内响应管理员指令
+    private: true        # 私聊响应管理员指令
 bind:
   # ---- 验证码 ----
   code-length: 4              # 位数（4~8）
@@ -70,6 +78,7 @@ debug: false                  # true 时输出每条 OneBot 帧到控制台
 messages:
   bound: "{at} 绑定成功！\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个\n现在可以重新进入服务器了"
   replaced: "{at} 绑定成功（已自动替换旧绑定，挤下：{old_player}）\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个"
+  already-bound: "{at} 该QQ已绑定游戏账号 {player}，无需重复绑定"
   wrong-code: "{at} 验证码错误或已过期，请重新进入服务器获取"
   code-used: "{at} 该验证码已被使用"
   qq-full: "{at} 该QQ已绑定满 {max} 个账号（{count}/{max}），请联系管理员"
@@ -77,3 +86,17 @@ messages:
   cooldown: "{at} 操作太频繁，请 {seconds} 秒后再试"
   not-bound: "{at} 你当前没有绑定任何账号"
   self-unbind-ok: "{at} 已解绑账号 {player}（该QQ还剩 {count} 个绑定）"
+  self-unbind-notfound: "{at} 你名下没有名为 {player} 的绑定，发送「解绑」查看列表"
+  self-unbind-list: "{at} {result}"
+  help: "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定"
+  admin-help: "{at} 管理员指令：\n查 <玩家名|QQ号> —— 查询绑定\n解绑 <玩家名|QQ号> —— 解绑（多条会列出）\n解绑 <玩家名> <QQ号> —— 精确解绑\n全解绑 <玩家名|QQ号> —— 清空全部绑定\n绑定 <玩家名> <QQ号> —— 代绑\n状态 —— 连接与统计"
+  admin-lookup: "{at} {result}"
+  admin-lookup-empty: "{at} {target} 未找到绑定"
+  admin-unbind-notfound: "{at} {target} 无绑定（或未找到该组合）"
+  admin-unbind-exact-ok: "{at} 已解绑 {player} <-> QQ {qq}（还剩 {count} 条）"
+  admin-unbind-ambiguous: "{at} {result}"
+  admin-unbindall-ok: "{at} 已清空 {target} 名下 {count} 条绑定（{detail}）"
+  admin-bind-ok: "{at} 已绑定 {player} <-> QQ {qq}"
+  admin-bind-no-player: "{at} 未找到玩家 {player} 的既有绑定记录，无法定位UUID；请让玩家先进服一次，或使用游戏内 /qqgateadmin bind"
+  admin-bind-fail: "{at} 绑定失败"
+  admin-status: "{at} {result}"

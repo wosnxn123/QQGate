@@ -245,4 +245,45 @@ class BindServiceTest {
         assertEquals(1, removed);
         assertEquals(0, svc.activeCodeCount());
     }
+
+    @Test
+    void selfUnbindByNameTargetsOwnBindingsOnly() {
+        apply(new BindSettings.Builder().maxPerQq(3).selfUnbind(true).cooldownSeconds(0));
+        UUID mine1 = UUID.randomUUID();
+        UUID mine2 = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        var c1 = svc.ensureCode(mine1, "Steve", now);
+        var c2 = svc.ensureCode(mine2, "Alex", now);
+        var c3 = svc.ensureCode(other, "Steve", now); // 别人的 Steve（另一个QQ绑）
+        svc.attemptBind(c1.code(), 10001L, now + 100);
+        svc.attemptBind(c2.code(), 10001L, now + 200);
+        svc.attemptBind(c3.code(), 10002L, now + 300);
+
+        // 解自己名下 Steve：只删 10001-Steve，不动 Alex 和 10002-Steve
+        assertEquals(1, svc.selfUnbindByName(10001L, "steve")); // 大小写不敏感
+        assertFalse(svc.isBound(mine1));
+        assertTrue(svc.isBound(mine2));
+        assertTrue(svc.isBound(other)); // 他人的 Steve 绑定不受影响
+
+        // 名字不在自己名下
+        assertEquals(0, svc.selfUnbindByName(10001L, "Notch"));
+        assertTrue(svc.isBound(mine2));
+    }
+
+    @Test
+    void unbindExactRemovesSinglePair() {
+        apply(new BindSettings.Builder().maxPerQq(2).maxPerPlayer(2).cooldownSeconds(0));
+        UUID u = UUID.randomUUID();
+        // 注意顺序：每次 ensureCode 会作废上一个码（refresh-on-rejoin），
+        // 必须 拿码→绑定→再拿下一个码
+        var c1 = svc.ensureCode(u, "Steve", now);
+        svc.attemptBind(c1.code(), 10001L, now + 100);
+        var c2 = svc.ensureCode(u, "Steve", now + 200);
+        svc.attemptBind(c2.code(), 10002L, now + 300);
+
+        assertTrue(svc.unbindExact(u, 10001L));
+        assertFalse(svc.unbindExact(u, 10001L)); // 重复删返回 false
+        assertEquals(1, svc.findByUuid(u).size());
+        assertEquals(10002L, svc.findByUuid(u).get(0).qq());
+    }
 }

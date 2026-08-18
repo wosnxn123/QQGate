@@ -63,17 +63,73 @@ class CommandParseTest {
         assertFalse(UNBIND.matcher("解绑 Steve").matches());
         assertFalse(UNBIND.matcher("绑定 1234").matches());
     }
-
     @Test
     void patternsMatchImplementation() throws Exception {
-        // 保证测试正则与实现同步：从实现类反射读取并比对源字符串
+        // 直接从实现类反射读取正则并验证行为（无本地副本，永不过期）
         Class<?> c = ChatMessageHandler.class;
-        var field = c.getDeclaredField("BIND");
-        field.setAccessible(true);
-        Pattern impl = (Pattern) field.get(null);
-        assertEquals(BIND.pattern(), impl.pattern());
-        var field2 = c.getDeclaredField("UNBIND");
-        field2.setAccessible(true);
-        assertEquals(UNBIND.pattern(), ((Pattern) field2.get(null)).pattern());
+        var f1 = c.getDeclaredField("BIND");
+        f1.setAccessible(true);
+        var f2 = c.getDeclaredField("UNBIND");
+        f2.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        var bindImpl = (Pattern) f1.get(null);
+        @SuppressWarnings("unchecked")
+        var unbindImpl = (Pattern) f2.get(null);
+        assertTrue(bindImpl.matcher("绑定 4823").matches());
+        assertFalse(bindImpl.matcher("绑定 Steve 12345678").matches());
+        assertTrue(unbindImpl.matcher("解绑").matches());
+        assertFalse(unbindImpl.matcher("解绑x").matches());
+    }
+
+    // ---------------- v4 新指令形态 ----------------
+
+    @Test
+    void unbindWithAccountName() {
+        Matcher m = ChatMessageHandler.UNBIND.matcher("解绑 Steve");
+        assertTrue(m.matches());
+        assertEquals("Steve", m.group(1));
+        assertNull(m.group(2));
+        assertTrue(ChatMessageHandler.UNBIND.matcher("解绑").matches());
+        assertTrue(ChatMessageHandler.UNBIND.matcher(" 解绑 ").matches());
+        // 尾参 5~12 位数字 → 管理员精确解绑形态，同样命中（分流在 handler 层）
+        Matcher m2 = ChatMessageHandler.UNBIND.matcher("解绑 Steve 12345");
+        assertTrue(m2.matches());
+    }
+
+
+    @Test
+    void adminPatterns() {
+        Matcher m = ChatMessageHandler.ADMIN_BIND.matcher("绑定 Steve 10086");
+        assertTrue(m.matches());
+        assertEquals("Steve", m.group(1));
+        assertEquals("10086", m.group(2));
+
+        m = ChatMessageHandler.ADMIN_BIND.matcher("绑定 4823");
+        assertFalse(m.matches()); // 纯码是玩家绑定
+
+        m = ChatMessageHandler.UNBIND_ALL.matcher("全解绑 Steve");
+        assertTrue(m.matches());
+        assertEquals("Steve", m.group(1));
+        assertFalse(ChatMessageHandler.UNBIND_ALL.matcher("全解绑").matches());
+
+        m = ChatMessageHandler.ADMIN_LOOKUP.matcher("查 1122334455");
+        assertTrue(m.matches());
+        assertFalse(ChatMessageHandler.ADMIN_LOOKUP.matcher("查询").matches());
+
+        assertTrue(ChatMessageHandler.QUERY.matcher("查询").matches());
+        assertTrue(ChatMessageHandler.HELP.matcher("帮助").matches());
+        assertTrue(ChatMessageHandler.STATUS.matcher("状态").matches());
+    }
+
+    @Test
+    void unbindWithExactQqForm() {
+        Matcher m = ChatMessageHandler.UNBIND.matcher("解绑 Steve 10086");
+        assertTrue(m.matches());
+        assertEquals("Steve", m.group(1));
+        assertEquals("10086", m.group(2));
+
+        m = ChatMessageHandler.UNBIND.matcher("解绑 1122334455");
+        assertTrue(m.matches());
+        assertEquals("1122334455", m.group(1)); // 纯数字目标（QQ形态）
     }
 }
