@@ -353,5 +353,21 @@ class OneBotE2ETest {
         String playerReply = bot.awaitMessage(5);
         assertFalse(playerReply.contains("管理员指令"), playerReply);
     }
+
+    @Test
+    void helpReflectsSelfUnbindSwitch() throws Exception {
+        // 默认关：帮助不含解绑指令行，提示未开启
+        bot.send(groupEventAdmin(777, 10001, "帮助"));
+        String off = bot.awaitMessage(5);
+        assertFalse(off.contains("解绑 <账号名>"), off);
+        assertTrue(off.contains("自助解绑未开启"), off);
+
+        // 开启后：帮助出现解绑指令行
+        svc.updateSettings(new BindSettings.Builder().selfUnbind(true).build());
+        bot.send(groupEventAdmin(777, 10001, "帮助"));
+        String on = bot.awaitMessage(5);
+        assertTrue(on.contains("解绑 <账号名>"), on);
+        assertFalse(on.contains("自助解绑未开启"), on);
+    }
 }
 

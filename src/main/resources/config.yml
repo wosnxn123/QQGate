@@ -92,6 +92,7 @@ messages:
   self-unbind-ok: "{at} 已解绑账号 {player}（该QQ还剩 {count} 个绑定）"
   self-unbind-notfound: "{at} 你名下没有名为 {player} 的绑定，发送「解绑」查看列表"
   self-unbind-list: "{at} {result}"
+  # 帮助基础文案；解绑行由代码按 bind.self-unbind 动态追加，勿写进此模板
   help: "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定"
   admin-help: "{at} 管理员指令：\n查 <玩家名|QQ号> —— 查询绑定\n解绑 <玩家名|QQ号> —— 解绑（多条会列出）\n解绑 <玩家名> <QQ号> —— 精确解绑\n全解绑 <玩家名|QQ号> —— 清空全部绑定\n绑定 <玩家名> <QQ号> —— 代绑\n状态 —— 连接与统计"
   admin-lookup: "{at} {result}"

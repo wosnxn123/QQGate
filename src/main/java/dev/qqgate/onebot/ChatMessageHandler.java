@@ -108,7 +108,7 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
             return;
         }
         if (HELP.matcher(text).matches()) {
-            reply(msg, msg("messages.help", defaultHelp()));
+            reply(msg, playerHelp());
         }
     }
 
@@ -181,7 +181,7 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
         if (HELP.matcher(text).matches() && isAdmin(msg.userId())) {
             if (adminAllowed(msg)) {
                 // 管理员也是玩家：帮助合并显示玩家段+管理员段（去重 {at}）
-                String playerPart = msg("messages.help", defaultHelp());
+                String playerPart = playerHelp();
                 String adminPart = msg("messages.admin-help", defaultAdminHelp())
                         .replaceFirst(Pattern.quote("{at}") + "[\\s\\u3000]*", "");
                 reply(msg, playerPart + "\n\n" + adminPart);
@@ -523,12 +523,21 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
                 .atZone(java.time.ZoneId.systemDefault()));
     }
 
+    /** 玩家帮助：解绑行按 self-unbind 开关动态取舍（静态文案会误导）。 */
+    private String playerHelp() {
+        StringBuilder sb = new StringBuilder(msg("messages.help",
+                "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定"));
+        if (binds.settings().selfUnbind) {
+            sb.append("\n解绑 <账号名> —— 解绑指定账号");
+        } else {
+            // 关闭时不展示解绑行（发了也是静默忽略，展示即误导）
+            sb.append("\n（自助解绑未开启，换绑请联系管理员）");
+        }
+        return sb.toString();
+    }
+
     private static String defaultHelp() {
-        return """
-                {at} 可用指令：
-                绑定 <验证码> —— 绑定游戏账号
-                查询 —— 查看我的绑定"""
-                + ("\n解绑 <账号名> —— 解绑指定账号（需管理员开启）");
+        return "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定";
     }
 
     private static String defaultAdminHelp() {
