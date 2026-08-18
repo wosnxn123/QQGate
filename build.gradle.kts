@@ -4,8 +4,7 @@ plugins {
 }
 
 group = "dev.qqgate"
-version = "1.0.0"
-
+version = "1.1.1"
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
