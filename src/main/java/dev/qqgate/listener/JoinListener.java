@@ -92,12 +92,11 @@ public final class JoinListener implements Listener {
     }
 
     /**
-     * 群引导段（{group_line}）：
-     *   allow-all 开 + 有推荐群 → 显示推荐群（官方入口）+「或任意群」补充
-     *   allow-all 开 + 无推荐群 → 「请加入机器人所在的任意QQ群」
-     *   白名单模式            → 列出 allowed 全部群（推荐群不掺入）
-     *   白名单模式 + 白名单空  → 配置错误警告（不兜底：显示层须与裁决层一致，
-     *                           白名单空的群发码本就不会响应，引导过去=误导）
+     * 群引导内容（{group_line}）——只输出群号数据，引导语由模板负责：
+     *   allow-all 开 + 有推荐群 → 推荐群 ★（或任意群）
+     *   allow-all 开 + 无推荐群 → 通用提示语（无具体群号时自带完整句子）
+     *   白名单模式            → 全部白名单群号（/ 分隔）
+     *   白名单模式 + 白名单空  → 配置错误警告
      */
     private String buildGroupLine() {
         boolean allowAll = plugin.configBool("groups.allow-all", false);
@@ -105,10 +104,10 @@ public final class JoinListener implements Listener {
 
         if (allowAll) {
             if (!recommended.isEmpty()) {
-                return "请加群：<aqua>" + recommended + "</aqua> <yellow>★推荐</yellow>"
+                return "<aqua>" + recommended + "</aqua> <yellow>★推荐</yellow>"
                         + "<gray>（或机器人所在的任意群）</gray>";
             }
-            return "请加入机器人所在的任意QQ群";
+            return "机器人所在的任意QQ群";
         }
 
         List<String> allowed = plugin.getConfig().getStringList("groups.allowed");
@@ -117,9 +116,9 @@ public final class JoinListener implements Listener {
             if (!g.trim().isEmpty()) ordered.add(g.trim());
         }
         if (ordered.isEmpty()) {
-            return "<red><b>⚠ 服务器未配置绑定群，请联系服主检查 config.yml（groups）</b></red>";
+            return "<red><b>⚠ 未配置绑定群（config.yml groups）</b></red>";
         }
-        StringBuilder sb = new StringBuilder("请加群：");
+        StringBuilder sb = new StringBuilder();
         int i = 0;
         for (String g : ordered) {
             if (i++ > 0) sb.append(" / ");
@@ -127,8 +126,6 @@ public final class JoinListener implements Listener {
         }
         return sb.toString();
     }
-
-    /** 单一群号占位符（{group}）：推荐群 > 白名单第一个 > 兜底文本。 */
     private String primaryGroup() {
         String recommended = plugin.configString("groups.recommended", "").trim();
         if (!recommended.isEmpty()) return recommended;
