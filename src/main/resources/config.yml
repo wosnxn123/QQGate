@@ -1,5 +1,5 @@
 # 配置结构版本（自动升级用，勿手改）
-config-version: 2
+config-version: 3
 
  # ============================================================
  #  QQGate 配置  |  改完用 /qqgate reload 生效（连接段除外）
@@ -24,7 +24,8 @@ groups:
   allow-all: false
   # 群白名单：只响应这些群的一切指令（allow-all: true 时失效）
   allowed: [123456789]
-  # 绑定成功的回执发回来源群
+  # 推荐群（可选）：踢出页置顶显示并标 ★；留空则按白名单顺序展示
+  recommended: ""
   reply-in-source-group: true
 
 private:
@@ -65,10 +66,11 @@ bind:
 kick:
   # 断开前延迟（毫秒）。拦截点已改为 PlayerLoginEvent（客户端已就绪），
   # 通常保持 0；仅当仍偶发"连接中断"时再试 300~800。
-  delay-ms: 0
   # 踢出页文案（\n 换行），占位符:
-  #   {code} {group} {expire_minutes} {expire_time} {player}
-  message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <red>你还未绑定QQ，暂时无法进入服务器</red>\n\n<white>请加群 <aqua>{group}</aqua> 后在群内发送：</white>\n\n      <green><b>绑定 {code}</b></green>\n\n<yellow>验证码有效期 <white>{expire_minutes}</white> 分钟\n（<white>{expire_time}</white> 前有效，过期请重连刷新）</yellow>\n<gray>绑定成功后重新连接即可进入服务器</gray>"
+  #   {code} {player} {expire_minutes} {expire_time} {expire_line}
+  #   {group_line} 群引导行（推荐群★置顶+全白名单 / allow-all 提示语 + 私聊提示）
+  #   {group} 单一群号（推荐群 > 白名单第一个；allow-all 时为提示文本）
+  message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <red>你还未绑定QQ，暂时无法进入服务器</red>\n\n<white>{group_line}</white>\n<gray>发送：</gray><green><b>绑定 {code}</b></green>\n\n<yellow>验证码有效期 <white>{expire_minutes}</white> 分钟（<white>{expire_time}</white> 前有效）</yellow>\n<gray>绑定成功后重新连接即可进入服务器</gray>"
 
 storage:
   file: bindings.json         # 相对 plugins/QQGate/

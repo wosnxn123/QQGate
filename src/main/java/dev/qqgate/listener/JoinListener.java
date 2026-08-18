@@ -12,17 +12,16 @@ import org.bukkit.event.player.PlayerLoginEvent;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 进服拦截：PlayerLoginEvent（连接验证后、实体生成前）。
  *
- * 与 AuthMe 同一拦截层（其 Paper 路径为 PlayerConnectionValidateLoginEvent，
- * 旧路径为 PlayerLoginEvent）。此时客户端已完成登录握手进入配置阶段，
- * disallow 断开包必然被渲染为踢出屏，无"连接中断"竞态，delay-ms 归 0。
- *
- * 顺序保证：@LOWEST 先于 AuthMe 的监听器裁决。
- * Folia：本事件在全局区域线程触发，无区域依赖。
+ * 与 AuthMe 同一拦截层。客户端已进入配置阶段，disallow 断开包必然渲染。
+ * 顺序保证：@LOWEST 先于 AuthMe 裁决。Folia：全局区域线程，无区域依赖。
  */
 public final class JoinListener implements Listener {
 
@@ -39,15 +38,14 @@ public final class JoinListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onLogin(PlayerLoginEvent event) {
         if (event.getResult() != PlayerLoginEvent.Result.ALLOWED) {
-            return; // 已被更早的规则拒绝（封禁/满员等），不覆盖
+            return;
         }
         var uuid = event.getPlayer().getUniqueId();
         if (binds.isBound(uuid)) {
             return; // 已绑定 → 放行，交给 AuthMe
         }
-        // bypass：仅 OP 可跳过（登录阶段权限插件数据未加载）
         if (event.getPlayer().isOp()) {
-            return;
+            return; // bypass：登录阶段权限插件未加载，仅 OP 判断
         }
 
         var code = binds.ensureCode(uuid, event.getPlayer().getName(), System.currentTimeMillis());
@@ -55,11 +53,17 @@ public final class JoinListener implements Listener {
         event.disallow(PlayerLoginEvent.Result.KICK_OTHER, msg);
     }
 
-    /** 渲染踢出页文案：占位符替换 + 有效期显示模式。 */
+    /**
+     * 踢出页渲染：占位符替换 + 有效期 + 群引导段。
+     * 群引导策略（{group_line}）：
+     *   allow-all 开  → 「请加入机器人所在的任意QQ群」（不列群号）
+     *   白名单模式   → 列出全部白名单群；有推荐群则置顶标 ★
+     * {group} 保留为单一群号（推荐群 > 白名单第一个），兼容旧模板。
+     */
     private String renderKickMessage(String playerName, BindService.PendingCode code) {
-        String template = plugin.configString("kick.message",
-                "<red>未绑定QQ，请在群内发送：绑定 {code}</red>");
-        String group = firstAllowedGroup();
+        String template = plugin.configString("kick.message", defaultTemplate());
+        String groupLine = buildGroupLine();
+        String group = primaryGroup();
 
         long expireMinutes = Math.max(1, plugin.configInt("bind.expire-minutes", 5));
         String expireTime = formatExpire(code.expiresAt());
@@ -70,8 +74,14 @@ public final class JoinListener implements Listener {
             case "absolute" -> expireTime;
             default -> relative + "（" + expireTime + " 前有效，过期请重连刷新）";
         };
-        // 只替换模板中出现的有效期组合占位符
         template = template.replace("{expire_line}", line);
+        // 私聊渠道提示：开启时追加一行（allow-all 或白名单模式通用）
+        String hint = privateHint();
+        if (!hint.isEmpty()) {
+            template = template.replace("{group_line}", groupLine + "\n" + hint);
+        } else {
+            template = template.replace("{group_line}", groupLine);
+        }
 
         return template
                 .replace("{code}", code.code())
@@ -81,9 +91,59 @@ public final class JoinListener implements Listener {
                 .replace("{expire_time}", expireTime);
     }
 
-    private String firstAllowedGroup() {
-        List<String> groups = plugin.getConfig().getStringList("groups.allowed");
-        return groups.isEmpty() ? "（未配置群号，请检查 config.yml）" : groups.get(0);
+    /** 群引导段：按 allow-all / 白名单 / 推荐群 组合生成多行文本（含 \n）。 */
+    private String buildGroupLine() {
+        if (plugin.configBool("groups.allow-all", false)) {
+            return "请加入机器人所在的任意QQ群";
+        }
+        List<String> allowed = plugin.getConfig().getStringList("groups.allowed");
+        String recommended = plugin.configString("groups.recommended", "").trim();
+
+        Set<String> ordered = new LinkedHashSet<>();
+        if (!recommended.isEmpty()) {
+            ordered.add(recommended); // 推荐群置顶
+        }
+        for (String g : allowed) {
+            if (!g.trim().isEmpty()) ordered.add(g.trim());
+        }
+        if (ordered.isEmpty()) {
+            return "请联系管理员获取绑定群";
+        }
+        StringBuilder sb = new StringBuilder("请加群：");
+        int i = 0;
+        for (String g : ordered) {
+            if (i++ > 0) sb.append(" / ");
+            if (g.equals(recommended)) {
+                sb.append("<aqua>").append(g).append("</aqua> <yellow>★推荐</yellow>");
+            } else {
+                sb.append("<aqua>").append(g).append("</aqua>");
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 单一群号占位符：推荐群 > 白名单第一个；allow-all 下为提示文本。 */
+    private String primaryGroup() {
+        String recommended = plugin.configString("groups.recommended", "").trim();
+        if (!recommended.isEmpty()) return recommended;
+        List<String> allowed = plugin.getConfig().getStringList("groups.allowed");
+        if (!allowed.isEmpty()) return allowed.get(0).trim();
+        return "机器人所在群";
+    }
+
+    /** 私聊渠道提示行（开启私聊绑定时追加在群引导后）。 */
+    private String privateHint() {
+        return plugin.configBool("private.allow-bind", false)
+                ? "<gray>也可以私聊机器人发送上述指令完成绑定</gray>" : "";
+    }
+
+    private static String defaultTemplate() {
+        return "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <red>你还未绑定QQ，暂时无法进入服务器</red>"
+                + "\n\n<white>{group_line}</white>"
+                + "\n<gray>发送：</gray><green><b>绑定 {code}</b></green>"
+                + "\n\n<yellow>验证码有效期 <white>{expire_minutes}</white> 分钟"
+                + "（<white>{expire_time}</white> 前有效）</yellow>"
+                + "\n<gray>绑定成功后重新连接即可进入服务器</gray>";
     }
 
     private String formatExpire(long epochMilli) {
