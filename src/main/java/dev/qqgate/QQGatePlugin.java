@@ -28,6 +28,19 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
 
     @Override
     public void onEnable() {
+        // 配置自动升级：旧配置补齐新段（只增不改，写前备份）
+        try {
+            var result = dev.qqgate.config.ConfigUpgrader.upgradeIfNeeded(
+                    getDataFolder().toPath().resolve("config.yml"),
+                    new String(getResource("config.yml").readAllBytes(),
+                            java.nio.charset.StandardCharsets.UTF_8));
+            if (result.upgraded()) {
+                getLogger().info("配置已自动升级 v" + result.fromVersion() + " -> v" + result.toVersion()
+                        + "（新增 " + result.addedKeys() + " 项，备份: " + result.backup() + "）");
+            }
+        } catch (Exception e) {
+            getLogger().warning("配置升级检查失败（继续用现有配置）: " + e);
+        }
         saveDefaultConfig();
         Path dataFolder = getDataFolder().toPath();
 
@@ -54,13 +67,12 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         if (adminCmd != null) {
             QQGateAdminCommand executor = new QQGateAdminCommand(this, bindService, endpoint);
             adminCmd.setExecutor(executor);
-            adminCmd.setTabCompleter(executor);
         }
         getServer().getAsyncScheduler().runAtFixedRate(this, t -> bindService.purgeExpired(),
                 30_000L, 30_000L, java.util.concurrent.TimeUnit.MILLISECONDS);
 
-        getLogger().info("QQGate enabled. mode=" + configString("onebot.mode", "reverse-ws")
-                + " port=" + configInt("onebot.listen-port", 6700));
+        getLogger().info("QQGate enabled. "
+                + String.join(" | ", dev.qqgate.config.ConfigUpgrader.summaryOf(getConfig())));
     }
 
     @Override
