@@ -76,7 +76,6 @@ admins:
 ```yaml
 private:
   allow-bind: false
-```
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -149,8 +148,9 @@ kick:
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `delay-ms` | `0` | 断开前延迟（毫秒）。拦截点已为 `PlayerLoginEvent`，通常保持 0；极端网络偶发"连接中断"时再试 300~800 |
+| `banned-message` | 见默认 | 被拉黑 QQ 名下账号进服的踢出页（不显示验证码） |
+| `name-banned-message` | 见默认 | 同名封禁（该名字曾绑定被拉黑QQ）进服的踢出页 |
 | `message` | 见默认 | 踢出页文案，MiniMessage 格式 |
-
 **可用占位符**：
 
 | 占位符 | 内容 |
