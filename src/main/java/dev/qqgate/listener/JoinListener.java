@@ -91,39 +91,44 @@ public final class JoinListener implements Listener {
                 .replace("{expire_time}", expireTime);
     }
 
-    /** 群引导段：按 allow-all / 白名单 / 推荐群 组合生成多行文本（含 \n）。 */
+    /**
+     * 群引导段（{group_line}）：
+     *   allow-all 开 + 有推荐群 → 显示推荐群（官方入口）+「或任意群」补充
+     *   allow-all 开 + 无推荐群 → 「请加入机器人所在的任意QQ群」
+     *   白名单模式            → 列出 allowed 全部群（推荐群不掺入）
+     *   白名单模式 + 白名单空  → 配置错误警告（不兜底：显示层须与裁决层一致，
+     *                           白名单空的群发码本就不会响应，引导过去=误导）
+     */
     private String buildGroupLine() {
-        if (plugin.configBool("groups.allow-all", false)) {
-            return "请加入机器人所在的任意QQ群";
-        }
-        List<String> allowed = plugin.getConfig().getStringList("groups.allowed");
+        boolean allowAll = plugin.configBool("groups.allow-all", false);
         String recommended = plugin.configString("groups.recommended", "").trim();
 
-        Set<String> ordered = new LinkedHashSet<>();
-        if (!recommended.isEmpty()) {
-            ordered.add(recommended); // 推荐群置顶
+        if (allowAll) {
+            if (!recommended.isEmpty()) {
+                return "请加群：<aqua>" + recommended + "</aqua> <yellow>★推荐</yellow>"
+                        + "<gray>（或机器人所在的任意群）</gray>";
+            }
+            return "请加入机器人所在的任意QQ群";
         }
+
+        List<String> allowed = plugin.getConfig().getStringList("groups.allowed");
+        Set<String> ordered = new LinkedHashSet<>();
         for (String g : allowed) {
             if (!g.trim().isEmpty()) ordered.add(g.trim());
         }
         if (ordered.isEmpty()) {
-            // 白名单+推荐群全空且未开 allow-all = 配置错误（无群可完成绑定）
             return "<red><b>⚠ 服务器未配置绑定群，请联系服主检查 config.yml（groups）</b></red>";
         }
         StringBuilder sb = new StringBuilder("请加群：");
         int i = 0;
         for (String g : ordered) {
             if (i++ > 0) sb.append(" / ");
-            if (g.equals(recommended)) {
-                sb.append("<aqua>").append(g).append("</aqua> <yellow>★推荐</yellow>");
-            } else {
-                sb.append("<aqua>").append(g).append("</aqua>");
-            }
+            sb.append("<aqua>").append(g).append("</aqua>");
         }
         return sb.toString();
     }
 
-    /** 单一群号占位符：推荐群 > 白名单第一个；allow-all 下为提示文本。 */
+    /** 单一群号占位符（{group}）：推荐群 > 白名单第一个 > 兜底文本。 */
     private String primaryGroup() {
         String recommended = plugin.configString("groups.recommended", "").trim();
         if (!recommended.isEmpty()) return recommended;

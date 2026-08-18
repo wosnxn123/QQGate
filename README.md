@@ -19,8 +19,7 @@ Minecraft QQ 绑定门禁插件 —— 玩家进服前须完成 QQ 绑定，适�
 - **验证码安全**：4~8 位、5 分钟时效、一码一用、重连刷新、码只在踢出屏出现
 - **限额策略**：`max-per-qq` / `max-per-player` 双向限额，`reject`（拒绝）或 `replace`（自动挤掉最早的，换绑自助）
 - **私聊绑定**：可选开启私聊机器人完成绑定
-- **全群放行**：可选忽略群白名单
-- **稳定踢出屏**：拦截点为 `PlayerLoginEvent`（客户端已就绪），断开包必然渲染，不出现"连接中断"
+- **智能群引导**：踢出页按模式展示——白名单模式列全部群；`allow-all` 模式显示推荐群（★）或"机器人所在任意群"；私聊开启时附提示
 - **零外部依赖**：单 jar，Gson 用服务端自带的，仅 shade 了 Java-WebSocket（已 relocate）
 - **数据可读**：`bindings.json` 原子写入（tmp + move），支持 pretty-print
 
@@ -50,7 +49,8 @@ onebot:
   listen-port: 6700
   access-token: "一段强随机字符串"
 groups:
-  allowed: [你的群号]
+  allowed: [你的群号]        # 白名单群（踢出页会全部显示）
+  # recommended: "主群号"    # 可选：仅 allow-all 模式下作为踢出页官方入口展示
 ```
 
 ### 3. 配置 NapCat

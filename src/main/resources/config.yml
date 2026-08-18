@@ -20,12 +20,11 @@ onebot:
   reconnect-seconds: 5              # forward-ws 断线自动重连间隔（秒）
   heartbeat-timeout-seconds: 60     # 超过该秒数无事件判定机器人离线（OneBot 默认心跳 15s）
   allowed-self-id: 0                # 只信任该机器人QQ号的事件；0 = 不限制（防其他机器人误连）
-
-# -------------------------------- 群控制 --------------------------------
 groups:
   allow-all: false                  # true = 任何群都可执行全部指令（下方白名单失效）；默认 false 只用白名单
   allowed: [123456789]              # 群白名单：只响应这些群的一切指令（allow-all: true 时失效）
-  recommended: ""                   # 推荐群（可选）：踢出页置顶显示并标 ★；留空按白名单顺序；allow-all 开启时不显示
+  recommended: ""                   # 推荐群：allow-all 开时作为官方入口显示（★推荐 + 或任意群）；
+                                   #   白名单模式下不参与显示与功能。留空 = allow-all 时显示"机器人所在任意群"
   reply-in-source-group: true       # 回复发回消息来源的群
 
 # -------------------------------- 私聊 ----------------------------------
