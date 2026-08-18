@@ -301,12 +301,13 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 §6[QQGate] 管理员命令：
                 §f  /qqgateadmin status              §7连接状态与统计
                 §f  /qqgateadmin codes               §7当前待验证码
-                §f  /qqgateadmin lookup <名|QQ>      §7查询绑定
-                §f  /qqgateadmin qqban <QQ> [原因]   §7拉黑QQ（清其绑定）
-                §f  /qqgateadmin qqunban <QQ>        §7解除拉黑
-                §f  /qqgateadmin qqbans              §7QQ黑名单列表
+                §f  /qqgateadmin lookup <名|QQ>      §7查询绑定（拉黑QQ带⚠标记）
+                §f  /qqgateadmin unbind <名|QQ> [QQ] §7解绑（多条列出，双参精确）
                 §f  /qqgateadmin unbindall <名|QQ>   §7清空目标全部绑定
                 §f  /qqgateadmin bind <玩家> <QQ>    §7代绑（跳过验证码）
+                §f  /qqgateadmin qqban <QQ> [原因]   §7拉黑QQ（名下+同名账号全封锁）
+                §f  /qqgateadmin qqunban <QQ>        §7解除拉黑（自动复原）
+                §f  /qqgateadmin qqbans              §7QQ黑名单列表（含名下账号名）
                 §f  /qqgateadmin reload              §7重载配置""");
     }
 

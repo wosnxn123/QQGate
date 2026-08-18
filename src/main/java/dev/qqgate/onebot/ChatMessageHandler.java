@@ -606,11 +606,14 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
     private static String defaultAdminHelp() {
         return """
                 {at} 管理员指令：
-                查 <玩家名|QQ号> —— 查询绑定
+                查 <玩家名|QQ号> —— 查询绑定（拉黑QQ带⚠标记）
                 解绑 <玩家名|QQ号> —— 解绑（多条会列出）
                 解绑 <玩家名> <QQ号> —— 精确解绑
                 全解绑 <玩家名|QQ号> —— 清空全部绑定
                 绑定 <玩家名> <QQ号> —— 代绑
+                拉黑 <QQ号> [原因] —— 拉黑QQ（名下+同名账号全封锁）
+                解拉黑 <QQ号> —— 解除拉黑（自动复原）
+                拉黑列表 —— 黑名单（含名下账号名）
                 状态 —— 连接与统计""";
     }
 }
