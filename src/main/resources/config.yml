@@ -1,9 +1,9 @@
 # 配置结构版本（自动升级用，勿手改）
-config-version: 3
+config-version: 4
 
- # ============================================================
- #  QQGate 配置  |  改完用 /qqgate reload 生效（连接段除外）
- # ============================================================
+# ============================================================
+#  QQGate 配置  |  改完用 /qqgateadmin reload 生效（连接段除外）
+# ============================================================
 onebot:
   # 连接模式:
   #   reverse-ws —— 机器人主动连我方（NapCat/LLOneBot 常用，推荐）
@@ -38,10 +38,11 @@ admins:
   # QQ 管理员白名单：这些QQ可执行管理员指令（查/解绑/全解绑/绑定/状态/帮助）
   # 为空 = QQ 侧管理员功能整体关闭
   qq: []
-  # 管理员指令通道开关
+  # 管理员指令通道开关（语法：查/解绑/全解绑/绑定 <名> <QQ>/状态/帮助）
   respond:
     group: true          # 群内响应管理员指令
     private: true        # 私聊响应管理员指令
+
 bind:
   # ---- 验证码 ----
   code-length: 4              # 位数（4~8）
@@ -49,18 +50,19 @@ bind:
   expire-display: both        # both=时长+时刻 | relative | absolute
   time-format: "HH:mm"
   time-zone: "default"        # "default"=跟随服务器，或 "Asia/Shanghai"
-  # /qqgate bind 游戏内验证码回显（占位符同 kick.message）
+  # /qqgate bind 游戏内验证码回显（可用 {code} {group} {expire_minutes} {expire_time}）
   code-message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <yellow>你的验证码：<green><b>绑定 {code}</b></green>\n<gray>发送到群 <aqua>{group}</aqua> 完成绑定，有效期 {expire_minutes} 分钟（{expire_time} 前有效）</gray>"
-
 
   # ---- 数量限制 ----
   max-per-qq: 1               # 一个QQ最多绑几个游戏账号
   max-per-player: 1           # 一个游戏账号最多绑几个QQ
   # 达到上限时: reject=拒绝并提示 | replace=挤掉最早的绑定（自动换绑）
+  limit-policy: reject
+
   # 自助解绑开关（群+私聊一起管）：true = 玩家可发「解绑 <自己的账号名>」解绑；
   # 无参「解绑」始终只列列表。false = 解绑指令静默忽略，找管理员处理。
   self-unbind: false
-  cooldown-seconds: 10        # 绑定指令冷却（按QQ计，错码也计入）
+  cooldown-seconds: 10        # 指令冷却（按QQ计，绑定/解绑共享计时，错码也计入）
 
 
 kick:
@@ -77,10 +79,10 @@ storage:
   pretty-print: true
 
 debug: false                  # true 时输出每条 OneBot 帧到控制台
-
-# 群内回复文案（\n 换行）。所有回复自动引用触发消息并 @发送者。
-# 占位符: {at}=艾特 {player}=游戏名 {qq}=QQ号 {count}/{max}=该QQ已绑/上限
+# QQ 指令回复文案（\n 换行）。群回复自动引用触发消息并 @发送者；私聊为纯文本。
+# 占位符: {at}=艾特 {player}=游戏名 {qq}=QQ号 {count}/{max}=已绑/上限
 #         {remaining}=还可绑定几个 {old_player}=被挤下的玩家 {seconds}=冷却秒数
+#         {target}=查询/解绑目标 {result}/{detail}=代码生成的结果文本
 messages:
   bound: "{at} 绑定成功！\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个\n现在可以重新进入服务器了"
   replaced: "{at} 绑定成功（已自动替换旧绑定，挤下：{old_player}）\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个"
