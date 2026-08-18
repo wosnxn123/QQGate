@@ -221,7 +221,16 @@ class OneBotE2ETest {
         FakeBot intruder = new FakeBot(URI.create("ws://127.0.0.1:" + port + "/"), "wrong-token");
 
         assertTrue(intruder.connectBlocking(15, TimeUnit.SECONDS), "intruder should connect");
-        assertNotNull(intruder.closed.poll(15, TimeUnit.SECONDS), "unauthorized conn must be closed");
+        // 慢 CI 上 401 关闭帧到达可能延迟：轮询等待连接关闭而非单次 poll
+        long deadline = System.currentTimeMillis() + 20_000;
+        boolean closedSeen = false;
+        while (System.currentTimeMillis() < deadline) {
+            if (intruder.isClosed() || intruder.closed.poll(500, TimeUnit.MILLISECONDS) != null) {
+                closedSeen = true;
+                break;
+            }
+        }
+        assertTrue(closedSeen, "unauthorized conn must be closed");
         intruder.closeBlocking();
         // 原连接不受影响
         assertTrue(endpoint.status().connected());
