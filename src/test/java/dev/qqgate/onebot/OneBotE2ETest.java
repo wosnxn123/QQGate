@@ -336,5 +336,22 @@ class OneBotE2ETest {
         assertNull(bot.received.poll(1, TimeUnit.SECONDS), "admin cmd must respect channel switch");
         assertTrue(store.isBound(u));
     }
+
+    @Test
+    void adminHelpShowsBothSections() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        bot.send(groupEventAdmin(777, 90001, "帮助"));
+        String reply = bot.awaitMessage(5);
+        // 合并显示：玩家段 + 管理员段都在，且只有一处 @
+        assertTrue(reply.contains("绑定 <验证码>"), reply);
+        assertTrue(reply.contains("查询"), reply);
+        assertTrue(reply.contains("管理员指令"), reply);
+        assertTrue(reply.contains("全解绑"), reply);
+        assertEquals(1, reply.split("\\[CQ:at,qq=90001\\]", -1).length - 1, "exactly one @");
+        // 普通玩家帮助只含玩家段
+        bot.send(groupEventAdmin(777, 10001, "帮助"));
+        String playerReply = bot.awaitMessage(5);
+        assertFalse(playerReply.contains("管理员指令"), playerReply);
+    }
 }
 

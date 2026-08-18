@@ -180,7 +180,11 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
         }
         if (HELP.matcher(text).matches() && isAdmin(msg.userId())) {
             if (adminAllowed(msg)) {
-                reply(msg, msg("messages.admin-help", defaultAdminHelp()));
+                // 管理员也是玩家：帮助合并显示玩家段+管理员段（去重 {at}）
+                String playerPart = msg("messages.help", defaultHelp());
+                String adminPart = msg("messages.admin-help", defaultAdminHelp())
+                        .replaceFirst(Pattern.quote("{at}") + "[\\s\\u3000]*", "");
+                reply(msg, playerPart + "\n\n" + adminPart);
                 return true;
             }
         }
