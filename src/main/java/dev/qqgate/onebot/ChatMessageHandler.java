@@ -173,6 +173,10 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
             if (adminAllowed(msg)) adminQqUnban(msg, Long.parseLong(m.group(1)));
             return true;
         }
+        if (STATUS.matcher(text).matches()) {
+            if (adminAllowed(msg)) adminStatus(msg);
+            return true;
+        }
         if (QQBANS.matcher(text).matches()) {
             if (adminAllowed(msg)) adminQqBans(msg);
             return true;
