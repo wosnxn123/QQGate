@@ -47,6 +47,13 @@ public final class JoinListener implements Listener {
         if (event.getPlayer().isOp()) {
             return; // bypass：登录阶段权限插件未加载，仅 OP 判断
         }
+        // QQ 黑名单：该玩家名下（历史）绑定过被拉黑的 QQ → 直接拒绝，不发验证码
+        if (binds.store().isUuidBannedViaQq(uuid)) {
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(plugin.configString(
+                    "kick.banned-message",
+                    "<red><b>该QQ已被服务器拉黑，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+            return;
+        }
 
         var code = binds.ensureCode(uuid, event.getPlayer().getName(), System.currentTimeMillis());
         Component msg = MM.deserialize(renderKickMessage(event.getPlayer().getName(), code));

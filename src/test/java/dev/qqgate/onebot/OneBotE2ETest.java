@@ -369,5 +369,42 @@ class OneBotE2ETest {
         assertTrue(on.contains("解绑 <账号名>"), on);
         assertFalse(on.contains("自助解绑未开启"), on);
     }
+
+    @Test
+    void adminQqBanFlow() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        UUID u = UUID.randomUUID();
+        var code = svc.ensureCode(u, "Steve", System.currentTimeMillis());
+        svc.attemptBind(code.code(), 10001L, System.currentTimeMillis() + 100);
+        assertTrue(store.isBound(u));
+
+        // 拉黑：清绑定
+        bot.send(groupEventAdmin(777, 90001, "拉黑 10001 外挂"));
+        String reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("已拉黑"), reply);
+        assertTrue(reply.contains("10001"), reply);
+        assertFalse(store.isBound(u));
+
+        // 被拉黑 QQ 重绑被拒
+        UUID u2 = UUID.randomUUID();
+        var c2 = svc.ensureCode(u2, "New", System.currentTimeMillis());
+        bot.send(groupEventAdmin(777, 10001, "绑定 " + c2.code()));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("拉黑"), reply);
+
+        // 列表 + 解除
+        bot.send(groupEventAdmin(777, 90001, "拉黑列表"));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("10001"), reply);
+        bot.send(groupEventAdmin(777, 90001, "解拉黑 10001"));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("已解除"), reply);
+
+        // 解除后可绑
+        var c3 = svc.ensureCode(u2, "New", System.currentTimeMillis());
+        bot.send(groupEventAdmin(777, 10001, "绑定 " + c3.code()));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("绑定成功"), reply);
+    }
 }
 

@@ -188,6 +188,50 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                             : "§7[QQGate] 玩家 " + q + " 无绑定");
                 }
             }
+            case "qqban" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("§c用法: /qqgateadmin qqban <QQ号> [原因]");
+                    return true;
+                }
+                long qq;
+                try {
+                    qq = Long.parseLong(args[1]);
+                } catch (NumberFormatException e) {
+                    sender.sendMessage("§cQQ号格式错误: " + args[1]);
+                    return true;
+                }
+                String reason = args.length >= 3 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "";
+                int cleared = binds.qqban(qq, reason);
+                sender.sendMessage("§a[QQGate] 已拉黑 QQ " + qq + (reason.isEmpty() ? "" : "（原因: " + reason + "）")
+                        + (cleared > 0 ? "，并清除其 " + cleared + " 条绑定" : ""));
+            }
+            case "qqunban" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("§c用法: /qqgateadmin qqunban <QQ号>");
+                    return true;
+                }
+                long qq;
+                try {
+                    qq = Long.parseLong(args[1]);
+                } catch (NumberFormatException e) {
+                    sender.sendMessage("§cQQ号格式错误: " + args[1]);
+                    return true;
+                }
+                sender.sendMessage(binds.qqunban(qq)
+                        ? "§a[QQGate] 已解除拉黑 QQ " + qq
+                        : "§7[QQGate] QQ " + qq + " 不在黑名单");
+            }
+            case "qqbans" -> {
+                var bans = binds.store().bannedQqs();
+                if (bans.isEmpty()) {
+                    sender.sendMessage("§7[QQGate] QQ 黑名单为空");
+                    return true;
+                }
+                sender.sendMessage("§6[QQGate] §fQQ 黑名单（" + bans.size() + " 条）：");
+                bans.forEach((qq, meta) -> sender.sendMessage("§7  QQ " + qq
+                        + " §8· " + fmtTime(Long.parseLong(meta[0]))
+                        + (meta[1].isEmpty() ? "" : " §7· " + meta[1])));
+            }
             case "bind" -> {
                 if (args.length < 3) {
                     sender.sendMessage("§c用法: /qqgateadmin bind <玩家名> <QQ号>");
@@ -244,7 +288,9 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 §f  /qqgateadmin status              §7连接状态与统计
                 §f  /qqgateadmin codes               §7当前待验证码
                 §f  /qqgateadmin lookup <名|QQ>      §7查询绑定
-                §f  /qqgateadmin unbind <名|QQ> [QQ] §7解绑（多条列出，双参精确）
+                §f  /qqgateadmin qqban <QQ> [原因]   §7拉黑QQ（清其绑定）
+                §f  /qqgateadmin qqunban <QQ>        §7解除拉黑
+                §f  /qqgateadmin qqbans              §7QQ黑名单列表
                 §f  /qqgateadmin unbindall <名|QQ>   §7清空目标全部绑定
                 §f  /qqgateadmin bind <玩家> <QQ>    §7代绑（跳过验证码）
                 §f  /qqgateadmin reload              §7重载配置""");
@@ -253,7 +299,7 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("status", "codes", "lookup", "unbind", "unbindall", "bind", "reload", "help").stream()
+            return List.of("status", "codes", "lookup", "unbind", "unbindall", "bind", "qqban", "qqunban", "qqbans", "reload", "help").stream()
                     .filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT)))
                     .toList();
         }

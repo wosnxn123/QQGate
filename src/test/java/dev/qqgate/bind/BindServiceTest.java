@@ -286,4 +286,43 @@ class BindServiceTest {
         assertEquals(1, svc.findByUuid(u).size());
         assertEquals(10002L, svc.findByUuid(u).get(0).qq());
     }
+
+    @Test
+    void qqBanBlocksBindAndSelfUnbind() {
+        apply(new BindSettings.Builder().selfUnbind(true).cooldownSeconds(0));
+        UUID u = UUID.randomUUID();
+        var c = svc.ensureCode(u, "Steve", now);
+        svc.attemptBind(c.code(), 10001L, now + 100);
+        assertTrue(svc.isBound(u));
+
+        // 拉黑：清绑定 + 拒绝重绑 + 拒绝自助解绑
+        int cleared = svc.qqban(10001L, "作弊");
+        assertEquals(1, cleared);
+        assertFalse(svc.isBound(u));
+        assertTrue(svc.store().isQqBanned(10001L));
+
+        var c2 = svc.ensureCode(u, "Steve", now + 200);
+        assertEquals(BindService.Outcome.QQ_BANNED,
+                svc.attemptBind(c2.code(), 10001L, now + 300).outcome());
+        assertEquals(0, svc.selfUnbindByName(10001L, "Steve"));
+
+        // 解除后恢复
+        assertTrue(svc.qqunban(10001L));
+        var c3 = svc.ensureCode(u, "Steve", now + 400);
+        assertEquals(BindService.Outcome.SUCCESS,
+                svc.attemptBind(c3.code(), 10001L, now + 500).outcome());
+    }
+
+    @Test
+    void qqBanPersistsAcrossLoad() {
+        apply(new BindSettings.Builder().cooldownSeconds(0));
+        svc.qqban(10001L, "测试");
+        store.save();
+
+        BindStore store2 = new BindStore(dir, () -> false);
+        store2.load();
+        assertTrue(store2.isQqBanned(10001L));
+        var bans = store2.bannedQqs();
+        assertEquals("测试", bans.get(10001L)[1]);
+    }
 }

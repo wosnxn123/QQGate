@@ -55,6 +55,11 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
     static final Pattern UNBIND = Pattern.compile("^[\\s\\u3000]*解绑(?:[\\s\\u3000]+(\\S+?)(?:[\\s\\u3000]+(\\d{5,12}))?)?[\\s\\u3000]*$");
     /** 全解绑 <目标>。 */
     static final Pattern UNBIND_ALL = Pattern.compile("^[\\s\\u3000]*全解绑[\\s\\u3000]+(\\S+?)[\\s\\u3000]*$");
+    /** 管理员拉黑 <QQ> [原因] / 解拉黑 <QQ> / 拉黑列表。 */
+    static final Pattern QQBAN = Pattern.compile(
+            "^[\\s\\u3000]*拉黑[\\s\\u3000]+(\\d{5,12})(?:[\\s\\u3000]+(.*?))?[\\s\\u3000]*$");
+    static final Pattern QQUNBAN = Pattern.compile("^[\\s\\u3000]*解拉黑[\\s\\u3000]+(\\d{5,12})[\\s\\u3000]*$");
+    static final Pattern QQBANS = Pattern.compile("^[\\s\\u3000]*拉黑列表[\\s\\u3000]*$");
     /** 管理员查 <目标>。 */
     static final Pattern ADMIN_LOOKUP = Pattern.compile("^[\\s\\u3000]*查[\\s\\u3000]+(\\S+?)[\\s\\u3000]*$");
     static final Pattern QUERY = Pattern.compile("^[\\s\\u3000]*查询[\\s\\u3000]*$");
@@ -158,8 +163,18 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
             if (adminAllowed(msg)) adminUnbindAll(msg, m.group(1));
             return true;
         }
-        if (STATUS.matcher(text).matches()) {
-            if (adminAllowed(msg)) adminStatus(msg);
+        m = QQBAN.matcher(text);
+        if (m.matches()) {
+            if (adminAllowed(msg)) adminQqBan(msg, Long.parseLong(m.group(1)), m.group(2));
+            return true;
+        }
+        m = QQUNBAN.matcher(text);
+        if (m.matches()) {
+            if (adminAllowed(msg)) adminQqUnban(msg, Long.parseLong(m.group(1)));
+            return true;
+        }
+        if (QQBANS.matcher(text).matches()) {
+            if (adminAllowed(msg)) adminQqBans(msg);
             return true;
         }
         m = ADMIN_BIND.matcher(text);
@@ -338,6 +353,41 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
         log.info("[qq-admin] qq=" + msg.userId() + " cmd=全解绑 target=" + target + " n=" + n);
     }
 
+    private void adminQqBan(OneBotEndpoint.IncomingMessage msg, long qq, String reason) {
+        int cleared = binds.qqban(qq, reason == null ? "" : reason.trim());
+        reply(msg, msg("messages.qqban-ok",
+                        "{at} 已拉黑 QQ {qq}" + (reason == null || reason.isBlank() ? "" : "（原因: {reason}）")
+                                + (cleared > 0 ? "，并清除其 {count} 条绑定" : ""))
+                .replace("{qq}", String.valueOf(qq))
+                .replace("{reason}", reason == null ? "" : reason.trim())
+                .replace("{count}", String.valueOf(cleared)));
+        log.info("[qq-admin] qq=" + msg.userId() + " cmd=拉黑 target=" + qq
+                + " reason=" + (reason == null ? "" : reason.trim()) + " cleared=" + cleared);
+    }
+
+    private void adminQqUnban(OneBotEndpoint.IncomingMessage msg, long qq) {
+        boolean ok = binds.qqunban(qq);
+        reply(msg, ok
+                ? msg("messages.qqunban-ok", "{at} 已解除拉黑 QQ {qq}").replace("{qq}", String.valueOf(qq))
+                : msg("messages.qqunban-none", "{at} QQ {qq} 不在黑名单").replace("{qq}", String.valueOf(qq)));
+        log.info("[qq-admin] qq=" + msg.userId() + " cmd=解拉黑 target=" + qq + " ok=" + ok);
+    }
+
+    private void adminQqBans(OneBotEndpoint.IncomingMessage msg) {
+        var bans = binds.store().bannedQqs();
+        if (bans.isEmpty()) {
+            reply(msg, msg("messages.qqbans-empty", "{at} QQ 黑名单为空"));
+            return;
+        }
+        StringBuilder sb = new StringBuilder("QQ 黑名单（").append(bans.size()).append(" 条）：\n");
+        bans.forEach((qq, meta) -> sb.append("  ").append(qq).append(" · ")
+                .append(fmtTime(Long.parseLong(meta[0])))
+                .append(meta[1].isEmpty() ? "" : " · " + meta[1]).append('\n'));
+        reply(msg, msg("messages.qqbans-list", "{at} {result}")
+                .replace("{result}", sb.toString().stripTrailing()));
+        log.info("[qq-admin] qq=" + msg.userId() + " cmd=拉黑列表 n=" + bans.size());
+    }
+
     private void adminBind(OneBotEndpoint.IncomingMessage msg, String name, long qq) {
         // 名字解析：离线名无 UUID 来源，直接以名字作展示锚（与代绑语义一致，走全量检索）
         var existing = binds.allBindings().stream()
@@ -422,6 +472,8 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
                     .replace("{max}", String.valueOf(binds.settings().maxPerPlayer));
             case COOLDOWN -> msg("messages.cooldown", "{at} 操作太频繁，请 {seconds} 秒后再试")
                     .replace("{seconds}", String.valueOf(r.retryAfterSeconds()));
+            case QQ_BANNED -> msg("messages.qq-banned",
+                    "{at} 该QQ已被服务器拉黑，无法绑定；如有异议请联系管理员");
         };
         reply(msg, reply);
         if (r.outcome() == BindService.Outcome.SUCCESS

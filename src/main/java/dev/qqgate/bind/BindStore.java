@@ -31,16 +31,20 @@ public final class BindStore {
     }.getType();
 
     private final Path file;
+    private final Path banFile;
     private final BooleanSupplier prettyPrint;
     private final List<Binding> bindings = new ArrayList<>();
+    /** QQ 黑名单：qq -> (拉黑时间, 原因)。 */
+    private final java.util.Map<Long, String[]> bannedQqs = new java.util.LinkedHashMap<>();
     private final Object ioLock = new Object();
 
     public BindStore(Path dataFolder, BooleanSupplier prettyPrint) {
         this.file = dataFolder.resolve("bindings.json");
+        this.banFile = dataFolder.resolve("banned_qqs.json");
         this.prettyPrint = prettyPrint;
     }
 
-    /** 从磁盘加载（覆盖内存态）。 */
+    /** 从磁盘加载（覆盖内存态）：绑定 + QQ 黑名单。 */
     public synchronized void load() {
         synchronized (ioLock) {
             List<Binding> loaded;
@@ -60,10 +64,28 @@ public final class BindStore {
                 bindings.clear();
                 bindings.addAll(loaded);
             }
+            java.util.Map<Long, String[]> bans;
+            try {
+                if (Files.exists(banFile)) {
+                    String json = Files.readString(banFile, StandardCharsets.UTF_8);
+                    java.lang.reflect.Type t = new com.google.gson.reflect.TypeToken<java.util.Map<Long, String[]>>() {
+                    }.getType();
+                    bans = GSON.fromJson(json, t);
+                    if (bans == null) bans = new java.util.LinkedHashMap<>();
+                } else {
+                    bans = new java.util.LinkedHashMap<>();
+                }
+            } catch (Exception e) {
+                System.err.println("[QQGate] Failed to read banned_qqs.json, starting empty: " + e);
+                bans = new java.util.LinkedHashMap<>();
+            }
+            synchronized (bannedQqs) {
+                bannedQqs.clear();
+                bannedQqs.putAll(bans);
+            }
         }
     }
-
-    /** 异步/同步落盘由调用方决定调度。 */
+    /** 异步/同步落盘由调用方决定调度。绑定 + QQ 黑名单一起写。 */
     public void save() {
         List<Binding> snapshot;
         synchronized (bindings) {
@@ -87,7 +109,28 @@ public final class BindStore {
                 System.err.println("[QQGate] Failed to save bindings.json: " + e);
             }
         }
+        // 黑名单落盘（String[] = [时间戳, 原因]）
+        java.util.Map<Long, String[]> banSnapshot;
+        synchronized (bannedQqs) {
+            banSnapshot = new java.util.LinkedHashMap<>(bannedQqs);
+        }
+        String banJson = (prettyPrint.getAsBoolean()
+                ? new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
+                : GSON).toJson(banSnapshot);
+        synchronized (ioLock) {
+            try {
+                Files.createDirectories(banFile.getParent());
+                Path tmp = banFile.resolveSibling(banFile.getFileName() + ".tmp");
+                Files.writeString(tmp, banJson, StandardCharsets.UTF_8);
+                Files.move(tmp, banFile,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException e) {
+                System.err.println("[QQGate] Failed to save banned_qqs.json: " + e);
+            }
+        }
     }
+
 
     public synchronized int countByUuid(UUID uuid) {
         int n = 0;
@@ -172,5 +215,37 @@ public final class BindStore {
 
     public synchronized int size() {
         return bindings.size();
+    }
+
+    // ---------------- QQ 黑名单 ----------------
+
+    public synchronized boolean isQqBanned(long qq) {
+        return bannedQqs.containsKey(qq);
+    }
+
+    /** 玩家名下任一绑定 QQ 被拉黑 → 该玩家视为被拉黑。 */
+    public synchronized boolean isUuidBannedViaQq(UUID uuid) {
+        for (Binding b : bindings) {
+            if (b.uuid().equals(uuid) && bannedQqs.containsKey(b.qq())) return true;
+        }
+        return false;
+    }
+
+    /** 拉黑 QQ（幂等，重复拉黑更新原因）。返回该 QQ 名下被清除的绑定数。 */
+    public synchronized int banQq(long qq, long now, String reason) {
+        bannedQqs.put(qq, new String[]{String.valueOf(now), reason == null ? "" : reason});
+        int before = bindings.size();
+        bindings.removeIf(b -> b.qq() == qq);
+        return before - bindings.size();
+    }
+
+    /** 解除拉黑。返回是否存在。 */
+    public synchronized boolean unbanQq(long qq) {
+        return bannedQqs.remove(qq) != null;
+    }
+
+    /** 黑名单快照（qq -> [时间戳, 原因]）。 */
+    public synchronized java.util.Map<Long, String[]> bannedQqs() {
+        return new java.util.LinkedHashMap<>(bannedQqs);
     }
 }

@@ -24,7 +24,7 @@ public final class BindService {
     /** 绑定尝试结果。 */
     public enum Outcome {
         SUCCESS, WRONG_CODE, CODE_USED, QQ_FULL, PLAYER_FULL,
-        SUCCESS_REPLACED, COOLDOWN, ALREADY_BOUND
+        SUCCESS_REPLACED, COOLDOWN, ALREADY_BOUND, QQ_BANNED
     }
 
     public record BindResult(Outcome outcome, BindStore.Binding created,
@@ -184,6 +184,7 @@ public final class BindService {
     public BindResult adminBind(UUID uuid, String name, long qq, long now) {
         BindSettings s = settings;
         synchronized (serviceLock) {
+            if (store.isQqBanned(qq)) return BindResult.simple(Outcome.QQ_BANNED);
             for (BindStore.Binding b : store.findByUuid(uuid)) {
                 if (b.qq() == qq) {
                     return new BindResult(Outcome.ALREADY_BOUND, b, null, 0); // 已存在，幂等
@@ -218,11 +219,29 @@ public final class BindService {
         }
     }
 
+    /** 管理员拉黑 QQ：入黑名单 + 清其名下全部绑定 + 落盘。返回清除绑定数。 */
+    public int qqban(long qq, String reason) {
+        int cleared = store.banQq(qq, System.currentTimeMillis(), reason);
+        store.save();
+        return cleared;
+    }
+
+    /** 管理员解除拉黑。返回是否原本在黑名单。 */
+    public boolean qqunban(long qq) {
+        boolean ok = store.unbanQq(qq);
+        if (ok) store.save();
+        return ok;
+    }
+
     public BindResult attemptBind(String code, long qq, long now) {
         BindSettings s = settings;
         long cooldown = checkCooldown(qq, now);
         if (cooldown > 0) {
             return new BindResult(Outcome.COOLDOWN, null, null, cooldown);
+        }
+        // QQ 黑名单：拉黑后不可再绑定（含换号重绑）
+        if (store.isQqBanned(qq)) {
+            return BindResult.simple(Outcome.QQ_BANNED);
         }
         BindResult result;
         boolean mutated = false;
@@ -326,6 +345,8 @@ public final class BindService {
      */
     public int selfUnbindByName(long qq, String name) {
         if (!settings.selfUnbind) return 0;
+        // QQ 黑名单：不可自助解绑（堵"解绑腾位→换号洗白"路径）
+        if (store.isQqBanned(qq)) return 0;
         int n = 0;
         for (BindStore.Binding b : store.findByQq(qq)) {
             if (b.name().equalsIgnoreCase(name) && store.removeExact(b.uuid(), qq)) {
