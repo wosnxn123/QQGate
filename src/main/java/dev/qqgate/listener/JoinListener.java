@@ -144,14 +144,17 @@ public final class JoinListener implements Listener {
     }
 
     private static String defaultTemplate() {
-        return "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <red>你还未绑定QQ，暂时无法进入服务器</red>"
+        return "<dark_gray>─────────────────────────</dark_gray>"
+                + "\n<gold><b>QQGate 绑定验证</b></gold>"
+                + "\n<dark_gray>─────────────────────────</dark_gray>"
+                + "\n\n<red>你还未绑定QQ，暂时无法进入服务器</red>"
                 + "\n\n<white>{group_line}</white>"
                 + "\n<white>然后在群内发送：</white>"
-                + "\n\n        <green><b>绑定 {code}</b></green>"
+                + "\n<gray>➤ </gray><green><b>绑定 {code}</b></green>"
                 + "\n\n<yellow>验证码有效期 <white>{expire_minutes}</white> 分钟"
                 + "（<white>{expire_time}</white> 前有效）"
                 + "\n过期请重新连接服务器刷新验证码</yellow>"
-                + "\n<gray>绑定成功后重新连接即可进入服务器</gray>";
+                + "\n\n<gray>绑定成功后重新连接即可进入服务器</gray>";
     }
 
     private String formatExpire(long epochMilli) {
