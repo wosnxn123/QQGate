@@ -40,23 +40,32 @@ public final class JoinListener implements Listener {
         if (event.getResult() != PlayerLoginEvent.Result.ALLOWED) {
             return;
         }
-        var uuid = event.getPlayer().getUniqueId();
-        if (binds.isBound(uuid)) {
-            return; // 已绑定 → 放行，交给 AuthMe
-        }
-        if (event.getPlayer().isOp()) {
+        var player = event.getPlayer();
+        var uuid = player.getUniqueId();
+        if (player.isOp()) {
             return; // bypass：登录阶段权限插件未加载，仅 OP 判断
         }
-        // QQ 黑名单：该玩家名下（历史）绑定过被拉黑的 QQ → 直接拒绝，不发验证码
-        if (binds.store().isUuidBannedViaQq(uuid)) {
-            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(plugin.configString(
-                    "kick.banned-message",
-                    "<red><b>该QQ已被服务器拉黑，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+        // ① QQ 黑名单（须在 isBound 放行前）：名下绑定的 QQ 被拉黑 → 拒绝
+        if (binds.hasBannedQq(uuid)) {
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
+                    plugin.configString("kick.banned-message",
+                            "<red><b>该QQ已被服务器拉黑，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+            return;
+        }
+        // ② 名字封禁：同名账号曾绑定被拉黑的 QQ → 拒绝（防原名字回流/顶替）
+        if (binds.isNameBanned(player.getName())) {
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
+                    plugin.configString("kick.name-banned-message",
+                            "<red><b>该名称已被封禁，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+            return;
+        }
+        // ③ 已绑定 → 放行，交给 AuthMe
+        if (binds.isBound(uuid)) {
             return;
         }
 
-        var code = binds.ensureCode(uuid, event.getPlayer().getName(), System.currentTimeMillis());
-        Component msg = MM.deserialize(renderKickMessage(event.getPlayer().getName(), code));
+        var code = binds.ensureCode(uuid, player.getName(), System.currentTimeMillis());
+        Component msg = MM.deserialize(renderKickMessage(player.getName(), code));
         event.disallow(PlayerLoginEvent.Result.KICK_OTHER, msg);
     }
 

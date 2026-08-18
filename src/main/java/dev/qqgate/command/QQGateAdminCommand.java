@@ -61,6 +61,11 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 String q = args[1];
                 if (isNumeric(q)) {
                     long qq = Long.parseLong(q);
+                    if (binds.store().isQqBanned(qq)) {
+                        var meta = binds.store().bannedQqs().get(qq);
+                        sender.sendMessage("§c[QQGate] ⚠ QQ " + qq + " 已被拉黑"
+                                + (meta != null && !meta[1].isEmpty() ? "（原因: " + meta[1] + "）" : ""));
+                    }
                     List<BindStore.Binding> list = binds.findByQq(qq);
                     if (list.isEmpty()) {
                         sender.sendMessage("§7[QQGate] QQ " + qq + " 未绑定任何账号");
@@ -200,10 +205,15 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage("§cQQ号格式错误: " + args[1]);
                     return true;
                 }
-                String reason = args.length >= 3 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "";
-                int cleared = binds.qqban(qq, reason);
-                sender.sendMessage("§a[QQGate] 已拉黑 QQ " + qq + (reason.isEmpty() ? "" : "（原因: " + reason + "）")
-                        + (cleared > 0 ? "，并清除其 " + cleared + " 条绑定" : ""));
+                String reason = args.length >= 3
+                        ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "";
+                var names = binds.qqban(qq, reason);
+                sender.sendMessage("§a[QQGate] 已拉黑 QQ " + qq
+                        + (reason.isEmpty() ? "" : "（原因: " + reason + "）"));
+                sender.sendMessage(names.isEmpty()
+                        ? "§7[QQGate] 该QQ名下无绑定（纯QQ拉黑，不涉名字封禁）"
+                        : "§6[QQGate] 名下账号已封锁（绑定保留作案底）: §f" + String.join("、", names)
+                        + "§7 —— 同名新连接将被拒绝；解拉黑后自动复原");
             }
             case "qqunban" -> {
                 if (args.length < 2) {
@@ -228,9 +238,12 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 sender.sendMessage("§6[QQGate] §fQQ 黑名单（" + bans.size() + " 条）：");
-                bans.forEach((qq, meta) -> sender.sendMessage("§7  QQ " + qq
-                        + " §8· " + fmtTime(Long.parseLong(meta[0]))
-                        + (meta[1].isEmpty() ? "" : " §7· " + meta[1])));
+                bans.forEach((qq, meta) -> {
+                    var names = binds.store().namesOfQq(qq);
+                    sender.sendMessage("§7  QQ " + qq + " §8· " + fmtTime(Long.parseLong(meta[0]))
+                            + (meta[1].isEmpty() ? "" : " §7· " + meta[1])
+                            + (names.isEmpty() ? "" : " §f· 名下: " + String.join("、", names)));
+                });
             }
             case "bind" -> {
                 if (args.length < 3) {
@@ -255,6 +268,7 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                             + name + " <-> QQ " + qq;
                     case QQ_FULL -> "§c[QQGate] QQ " + qq + " 已绑定满 "
                             + binds.settings().maxPerQq + " 个账号（limit-policy=reject）";
+                    case QQ_BANNED -> "§c[QQGate] ⚠ QQ " + qq + " 已被拉黑，请先 /qqgateadmin qqunban " + qq;
                     case PLAYER_FULL -> "§c[QQGate] 玩家 " + name + " 已绑定满 "
                             + binds.settings().maxPerPlayer + " 个QQ（limit-policy=reject）";
                     default -> "§c[QQGate] 绑定失败: " + r.outcome();

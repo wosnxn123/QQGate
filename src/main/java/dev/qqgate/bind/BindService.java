@@ -219,20 +219,29 @@ public final class BindService {
         }
     }
 
-    /** 管理员拉黑 QQ：入黑名单 + 清其名下全部绑定 + 落盘。返回清除绑定数。 */
-    public int qqban(long qq, String reason) {
-        int cleared = store.banQq(qq, System.currentTimeMillis(), reason);
+    /** 管理员拉黑 QQ：入黑名单，绑定【保留】作案底 + 落盘。返回名下玩家名列表。 */
+    public java.util.List<String> qqban(long qq, String reason) {
+        store.banQq(qq, System.currentTimeMillis(), reason);
         store.save();
-        return cleared;
+        return store.namesOfQq(qq);
     }
 
-    /** 管理员解除拉黑。返回是否原本在黑名单。 */
+    /** 管理员解除拉黑：绑定未动，账号复原。返回是否原本在黑名单。 */
     public boolean qqunban(long qq) {
         boolean ok = store.unbanQq(qq);
         if (ok) store.save();
         return ok;
     }
 
+    /** 玩家名下存在被拉黑的 QQ（进服/换绑拦截用）。 */
+    public boolean hasBannedQq(UUID uuid) {
+        return store.isUuidBannedViaQq(uuid);
+    }
+
+    /** 名字封禁查询（进服拦截用）。 */
+    public boolean isNameBanned(String name) {
+        return store.isNameBanned(name);
+    }
     public BindResult attemptBind(String code, long qq, long now) {
         BindSettings s = settings;
         long cooldown = checkCooldown(qq, now);
@@ -261,6 +270,11 @@ public final class BindService {
             }
 
             UUID uuid = pending.uuid();
+            // 玩家名下已存在被拉黑的 QQ → 拒绝再绑（堵换QQ重生路径；
+            // 需先 qqunban 或管理员全解绑才能重新绑定）
+            if (store.isUuidBannedViaQq(uuid)) {
+                return BindResult.simple(Outcome.QQ_BANNED);
+            }
             // 已存在同 uuid 同 qq 的绑定 → 幂等：作废验证码，返回 ALREADY_BOUND
             // （区别于 SUCCESS，让群内回执能如实告知"无需重复"）
             for (BindStore.Binding b : store.findByUuid(uuid)) {

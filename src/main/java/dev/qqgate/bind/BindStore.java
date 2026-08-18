@@ -223,7 +223,7 @@ public final class BindStore {
         return bannedQqs.containsKey(qq);
     }
 
-    /** 玩家名下任一绑定 QQ 被拉黑 → 该玩家视为被拉黑。 */
+    /** 玩家名下任一绑定 QQ 被拉黑 → 该玩家视为被拉黑（绑定保留作案底）。 */
     public synchronized boolean isUuidBannedViaQq(UUID uuid) {
         for (Binding b : bindings) {
             if (b.uuid().equals(uuid) && bannedQqs.containsKey(b.qq())) return true;
@@ -231,21 +231,46 @@ public final class BindStore {
         return false;
     }
 
-    /** 拉黑 QQ（幂等，重复拉黑更新原因）。返回该 QQ 名下被清除的绑定数。 */
-    public synchronized int banQq(long qq, long now, String reason) {
-        bannedQqs.put(qq, new String[]{String.valueOf(now), reason == null ? "" : reason});
-        int before = bindings.size();
-        bindings.removeIf(b -> b.qq() == qq);
-        return before - bindings.size();
+    /** 拉黑 QQ：绑定【保留】作为案底（拦截依赖绑定存在；解拉黑即复原）。
+     * 返回该 QQ 名下的玩家名列表（供名字封禁与展示）。幂等：重复拉黑更新原因。 */
+    public synchronized java.util.List<String> banQq(long qq, long now, String reason) {
+        bannedQqs.put(qq, new String[]{
+                String.valueOf(now), reason == null ? "" : reason});
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (Binding b : bindings) {
+            if (b.qq() == qq && !names.contains(b.name())) names.add(b.name());
+        }
+        return names;
     }
 
-    /** 解除拉黑。返回是否存在。 */
+    /** 解除拉黑：绑定未动，账号即复原可玩。返回是否存在。 */
     public synchronized boolean unbanQq(long qq) {
         return bannedQqs.remove(qq) != null;
+    }
+
+    /** 名字封禁：任何被拉黑 QQ 名下的玩家名（比对忽略大小写）。 */
+    public synchronized boolean isNameBanned(String name) {
+        if (name == null) return false;
+        for (Binding b : bindings) {
+            if (b.qq() != 0 && bannedQqs.containsKey(b.qq())
+                    && b.name().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 黑名单快照（qq -> [时间戳, 原因]）。 */
     public synchronized java.util.Map<Long, String[]> bannedQqs() {
         return new java.util.LinkedHashMap<>(bannedQqs);
+    }
+
+    /** 拉黑 QQ 名下的玩家名快照（qqbans 列表展示用）。 */
+    public synchronized java.util.List<String> namesOfQq(long qq) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (Binding b : bindings) {
+            if (b.qq() == qq && !names.contains(b.name())) names.add(b.name());
+        }
+        return names;
     }
 }

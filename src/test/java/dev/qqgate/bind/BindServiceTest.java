@@ -295,34 +295,48 @@ class BindServiceTest {
         svc.attemptBind(c.code(), 10001L, now + 100);
         assertTrue(svc.isBound(u));
 
-        // 拉黑：清绑定 + 拒绝重绑 + 拒绝自助解绑
-        int cleared = svc.qqban(10001L, "作弊");
-        assertEquals(1, cleared);
-        assertFalse(svc.isBound(u));
+        // 拉黑：绑定【保留】作案底 + 名下拦截生效
+        var names = svc.qqban(10001L, "作弊");
+        assertEquals(1, names.size());
+        assertEquals("Steve", names.get(0));
+        assertTrue(svc.isBound(u));                        // 绑定未删
         assertTrue(svc.store().isQqBanned(10001L));
+        assertTrue(svc.hasBannedQq(u));                    // UUID 视角命中
+        assertTrue(svc.isNameBanned("Steve"));             // 名字封禁命中（忽略大小写）
+        assertTrue(svc.isNameBanned("steve"));
+        assertFalse(svc.isNameBanned("Notch"));
 
+        // 拒重绑：同QQ 或 名下拉黑QQ换新QQ 都拒
         var c2 = svc.ensureCode(u, "Steve", now + 200);
         assertEquals(BindService.Outcome.QQ_BANNED,
                 svc.attemptBind(c2.code(), 10001L, now + 300).outcome());
-        assertEquals(0, svc.selfUnbindByName(10001L, "Steve"));
+        var c2b = svc.ensureCode(u, "Steve", now + 350);
+        assertEquals(BindService.Outcome.QQ_BANNED,
+                svc.attemptBind(c2b.code(), 10002L, now + 360).outcome()); // 换干净QQ也被拒
+        assertEquals(0, svc.selfUnbindByName(10001L, "Steve"));            // 自助解绑拒
 
-        // 解除后恢复
+        // 解除后完全复原（绑定还在，直接能玩）
         assertTrue(svc.qqunban(10001L));
-        var c3 = svc.ensureCode(u, "Steve", now + 400);
-        assertEquals(BindService.Outcome.SUCCESS,
-                svc.attemptBind(c3.code(), 10001L, now + 500).outcome());
+        assertFalse(svc.hasBannedQq(u));
+        assertFalse(svc.isNameBanned("Steve"));
+        assertTrue(svc.isBound(u));
     }
 
     @Test
     void qqBanPersistsAcrossLoad() {
         apply(new BindSettings.Builder().cooldownSeconds(0));
+        UUID u = UUID.randomUUID();
+        var c = svc.ensureCode(u, "Steve", now);
+        svc.attemptBind(c.code(), 10001L, now + 100);
         svc.qqban(10001L, "测试");
         store.save();
 
         BindStore store2 = new BindStore(dir, () -> false);
         store2.load();
         assertTrue(store2.isQqBanned(10001L));
+        assertTrue(store2.isBound(u));                    // 绑定随落盘保留
         var bans = store2.bannedQqs();
         assertEquals("测试", bans.get(10001L)[1]);
+        assertEquals(java.util.List.of("Steve"), store2.namesOfQq(10001L));
     }
 }

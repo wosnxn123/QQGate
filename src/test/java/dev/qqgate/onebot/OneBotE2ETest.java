@@ -378,33 +378,41 @@ class OneBotE2ETest {
         svc.attemptBind(code.code(), 10001L, System.currentTimeMillis() + 100);
         assertTrue(store.isBound(u));
 
-        // 拉黑：清绑定
+        // 拉黑：绑定保留 + 名单回执
         bot.send(groupEventAdmin(777, 90001, "拉黑 10001 外挂"));
         String reply = bot.awaitMessage(5);
         assertTrue(reply.contains("已拉黑"), reply);
-        assertTrue(reply.contains("10001"), reply);
-        assertFalse(store.isBound(u));
+        assertTrue(reply.contains("Steve"), reply);      // 名下账号名字展示
+        assertTrue(store.isBound(u));                     // 绑定未删（案底保留）
 
-        // 被拉黑 QQ 重绑被拒
+        // 被拉黑 QQ 重绑被拒（新账号+干净名字）
         UUID u2 = UUID.randomUUID();
         var c2 = svc.ensureCode(u2, "New", System.currentTimeMillis());
         bot.send(groupEventAdmin(777, 10001, "绑定 " + c2.code()));
         reply = bot.awaitMessage(5);
         assertTrue(reply.contains("拉黑"), reply);
 
-        // 列表 + 解除
+        // Steve 本人换干净QQ也被拒（名下拉黑QQ拦截）
+        var c2b = svc.ensureCode(u, "Steve", System.currentTimeMillis() + 50);
+        bot.send(groupEventAdmin(777, 10002, "绑定 " + c2b.code()));
+        reply = bot.awaitMessage(5);
+        assertTrue(reply.contains("拉黑"), reply);
+
+        // 列表含名字 + 解除
         bot.send(groupEventAdmin(777, 90001, "拉黑列表"));
         reply = bot.awaitMessage(5);
         assertTrue(reply.contains("10001"), reply);
+        assertTrue(reply.contains("Steve"), reply);
         bot.send(groupEventAdmin(777, 90001, "解拉黑 10001"));
         reply = bot.awaitMessage(5);
         assertTrue(reply.contains("已解除"), reply);
-
-        // 解除后可绑
+        // 解除后 Steve 绑定复原（案底即占用，无需重绑）
+        assertTrue(store.isBound(u));
+        // 10001 名额仍被 Steve 占用（maxPerQq=1）→ 新账号绑定被 QQ_FULL 拒绝（案底占位语义）
         var c3 = svc.ensureCode(u2, "New", System.currentTimeMillis());
         bot.send(groupEventAdmin(777, 10001, "绑定 " + c3.code()));
         reply = bot.awaitMessage(5);
-        assertTrue(reply.contains("绑定成功"), reply);
+        assertTrue(reply.contains("绑定满"), reply);
     }
 }
 
