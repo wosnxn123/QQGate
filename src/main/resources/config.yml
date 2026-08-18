@@ -21,7 +21,7 @@ onebot:
 groups:
   allow-all: false                  # true = 任何群可执行全部指令（忽略白名单）
   allowed: [123456789]              # 群白名单：只响应这些群的一切指令
-  recommended: ""                   # 推荐群（可选）：踢出页置顶显示并标 ★；留空按白名单顺序
+  recommended: ""                   # 推荐群（可选）：踢出页置顶标 ★；allow-all 开启时不显示；留空按白名单顺序
   reply-in-source-group: true       # 回复发回来源群
 
 private:
