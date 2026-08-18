@@ -8,6 +8,9 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.handshake.ServerHandshake;
+import org.java_websocket.exceptions.InvalidDataException;
+import org.java_websocket.drafts.Draft;
+import org.java_websocket.handshake.ServerHandshakeBuilder;
 import org.java_websocket.server.WebSocketServer;
 
 import java.net.InetSocketAddress;
@@ -295,17 +298,22 @@ public final class OneBotEndpoint {
             super(addr);
         }
 
-        @Override
-        public void onOpen(WebSocket conn, ClientHandshake handshake) {
-            String auth = handshake.getFieldValue("Authorization");
+        /** 握手阶段拒绝（不进入 onOpen，客户端立即收到失败握手——比 onOpen 后 close 更可靠）。 */
+        public ServerHandshakeBuilder onWebsocketHandshakeReceivedAsServer(WebSocket conn,
+                Draft draft, ClientHandshake request) throws InvalidDataException {
+            String auth = request.getFieldValue("Authorization");
             String resource = conn.getResourceDescriptor();
             int q = resource == null ? -1 : resource.indexOf('?');
             if (!authorized(auth, q >= 0 ? resource.substring(q + 1) : null)) {
                 log.warning("OneBot connection rejected: bad access token from "
                         + conn.getRemoteSocketAddress());
-                conn.close(401);
-                return;
+                throw new InvalidDataException(401);
             }
+            return super.onWebsocketHandshakeReceivedAsServer(conn, draft, request);
+        }
+
+        @Override
+        public void onOpen(WebSocket conn, ClientHandshake handshake) {
             long sid = 0;
             try {
                 String s = handshake.getFieldValue("X-Self-ID");

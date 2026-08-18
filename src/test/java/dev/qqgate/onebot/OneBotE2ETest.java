@@ -220,18 +220,9 @@ class OneBotE2ETest {
         int port = endpoint.reversePort();
         FakeBot intruder = new FakeBot(URI.create("ws://127.0.0.1:" + port + "/"), "wrong-token");
 
-        assertTrue(intruder.connectBlocking(15, TimeUnit.SECONDS), "intruder should connect");
-        // 慢 CI 上 401 关闭帧到达可能延迟：轮询等待连接关闭而非单次 poll
-        long deadline = System.currentTimeMillis() + 20_000;
-        boolean closedSeen = false;
-        while (System.currentTimeMillis() < deadline) {
-            if (intruder.isClosed() || intruder.closed.poll(500, TimeUnit.MILLISECONDS) != null) {
-                closedSeen = true;
-                break;
-            }
-        }
-        assertTrue(closedSeen, "unauthorized conn must be closed");
-        intruder.closeBlocking();
+        // 握手阶段 401：连接建立失败（而非连上后被关闭）
+        assertFalse(intruder.connectBlocking(15, TimeUnit.SECONDS),
+                "unauthorized handshake must be rejected");
         // 原连接不受影响
         assertTrue(endpoint.status().connected());
     }
