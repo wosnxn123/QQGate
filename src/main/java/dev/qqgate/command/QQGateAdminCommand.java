@@ -82,13 +82,13 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                         } else {
                             sender.sendMessage("§6[QQGate] §f按名字找到 " + byName.size() + " 条：");
                             for (BindStore.Binding b : byName) {
-                                sender.sendMessage("§7  QQ " + maskQq(b.qq()) + " §8· " + fmtTime(b.boundAt()));
+                                sender.sendMessage("§7  QQ " + b.qq() + " §8· " + fmtTime(b.boundAt()));
                             }
                         }
                     } else {
                         sender.sendMessage("§6[QQGate] §f玩家 " + q + " 绑定 " + list.size() + " 个QQ：");
                         for (BindStore.Binding b : list) {
-                            sender.sendMessage("§7  QQ " + maskQq(b.qq()) + " §8· " + fmtTime(b.boundAt()));
+                            sender.sendMessage("§7  QQ " + b.qq() + " §8· " + fmtTime(b.boundAt()));
                         }
                     }
                 }
@@ -237,10 +237,6 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 .atZone(java.time.ZoneId.systemDefault()));
     }
 
-    private static String maskQq(long qq) {
-        String s = String.valueOf(qq);
-        return s.length() <= 4 ? s : s.substring(0, 2) + "****" + s.substring(s.length() - 2);
-    }
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("""
