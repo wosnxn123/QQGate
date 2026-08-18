@@ -107,7 +107,8 @@ public final class JoinListener implements Listener {
             if (!g.trim().isEmpty()) ordered.add(g.trim());
         }
         if (ordered.isEmpty()) {
-            return "请联系管理员获取绑定群";
+            // 白名单+推荐群全空且未开 allow-all = 配置错误（无群可完成绑定）
+            return "<red><b>⚠ 服务器未配置绑定群，请联系服主检查 config.yml（groups）</b></red>";
         }
         StringBuilder sb = new StringBuilder("请加群：");
         int i = 0;
