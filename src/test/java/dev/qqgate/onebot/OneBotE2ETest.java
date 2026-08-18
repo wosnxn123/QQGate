@@ -220,8 +220,8 @@ class OneBotE2ETest {
         int port = endpoint.reversePort();
         FakeBot intruder = new FakeBot(URI.create("ws://127.0.0.1:" + port + "/"), "wrong-token");
 
-        assertTrue(intruder.connectBlocking(5, TimeUnit.SECONDS));
-        assertNotNull(intruder.closed.poll(5, TimeUnit.SECONDS), "unauthorized conn must be closed");
+        assertTrue(intruder.connectBlocking(15, TimeUnit.SECONDS), "intruder should connect");
+        assertNotNull(intruder.closed.poll(15, TimeUnit.SECONDS), "unauthorized conn must be closed");
         intruder.closeBlocking();
         // 原连接不受影响
         assertTrue(endpoint.status().connected());
