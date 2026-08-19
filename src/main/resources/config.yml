@@ -71,10 +71,10 @@ kick:
   # 断开前延迟（毫秒）。拦截点为 PlayerLoginEvent（客户端已就绪），通常保持 0；
   # 仅当玩家仍偶发看到"连接中断"而非踢出屏时，再试 300~800。
   delay-ms: 0
-  # QQ 黑名单玩家的踢出页（名下绑定被拉黑QQ → 直接拒绝）
-  banned-message: "<red><b>该QQ已被服务器拉黑，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>"
-  # 名字封禁踢出页（同名账号曾绑定被拉黑的QQ）
-  name-banned-message: "<red><b>该名称已被封禁，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>"
+  # QQ 黑名单踢出页：该账号名下绑定的QQ已被拉黑（账号案底，非当前连接者本人QQ）
+  banned-message: "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>"
+  # 名字封禁踢出页：同名字的历史账号曾绑定被拉黑QQ（含撞名新号，申诉后可解）
+  name-banned-message: "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>"
   # 踢出页文案（\n 换行），占位符:
   #   {code} 验证码  {player} 玩家名  {expire_minutes} 分钟数  {expire_time} 时刻
   #   {expire_line} 组合好的有效期整行（按 expire-display 生成）

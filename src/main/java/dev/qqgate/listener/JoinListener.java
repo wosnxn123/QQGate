@@ -49,14 +49,14 @@ public final class JoinListener implements Listener {
         if (binds.hasBannedQq(uuid)) {
             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
                     plugin.configString("kick.banned-message",
-                            "<red><b>该QQ已被服务器拉黑，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+                            "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>")));
             return;
         }
         // ② 名字封禁：同名账号曾绑定被拉黑的 QQ → 拒绝（防原名字回流/顶替）
         if (binds.isNameBanned(player.getName())) {
             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
                     plugin.configString("kick.name-banned-message",
-                            "<red><b>该名称已被封禁，无法进入</b></red>\n<gray>如有异议请联系管理员申诉</gray>")));
+                            "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>")));
             return;
         }
         // ③ 已绑定 → 放行，交给 AuthMe
