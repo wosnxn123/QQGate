@@ -29,10 +29,21 @@ public final class JoinListener implements Listener {
 
     private final QQGatePlugin plugin;
     private final BindService binds;
+    /** 启动时读取并缓存（登录线程高并发下避免每次读配置的竞态；默认 false=不豁免）。包级可见供 diag 展示。 */
+    volatile boolean opSkipBind = false;
 
     public JoinListener(QQGatePlugin plugin, BindService binds) {
         this.plugin = plugin;
         this.binds = binds;
+        this.opSkipBind = plugin.configBool("kick.op-skip-bind-check", false);
+    }
+    /** /qqgateadmin reload 后刷新缓存。 */
+    public void refreshConfig() {
+        this.opSkipBind = plugin.configBool("kick.op-skip-bind-check", false);
+    }
+
+    public boolean isOpSkipBind() {
+        return opSkipBind;
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -56,9 +67,7 @@ public final class JoinListener implements Listener {
                             "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>")));
             return;
         }
-        // ③ OP 豁免（默认开启）：跳过"必须绑定"检查；黑名单已在上方对 OP 生效。
-        //    登录阶段权限插件未加载，无法查 qqgate.bypass 权限节点，仅能 isOp()。
-        if (player.isOp() && plugin.configBool("op-skip-bind-check", true)) {
+        if (player.isOp() && opSkipBind) {
             return;
         }
         // ④ 已绑定 → 放行，交给 AuthMe

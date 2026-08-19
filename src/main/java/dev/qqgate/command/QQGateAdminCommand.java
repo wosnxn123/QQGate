@@ -40,6 +40,7 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                         "§6[QQGate] §7mode=%s §fconnected=%s§7, self_id=%d, uptime=%ds, last_event=%ds ago, binds=%d, active_codes=%d",
                         st.mode(), st.connected(), st.selfId(), st.connectedSeconds(),
                         st.lastEventSecondsAgo(), binds.allBindings().size(), binds.activeCodeCount()));
+                sender.sendMessage("§7[QQGate] 完整自检: /qqgateadmin diag");
             }
             case "codes" -> {
                 List<BindService.PendingCode> codes = binds.activeCodes();
@@ -278,7 +279,46 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 plugin.reloadAll();
                 sender.sendMessage("§a[QQGate] 配置已重载（连接参数 mode/端口需重启生效）");
             }
-            default -> sendHelp(sender);
+            case "diag" -> {
+                var cfg = plugin.getConfig();
+                sender.sendMessage("§6[QQGate] §f── 运行时配置自检 ──");
+                sender.sendMessage("§7配置版本: §f" + cfg.getInt("config-version", 0)
+                        + " §8| op-skip=" + plugin.joinListenerSkip()
+                        + " §8| self-unbind=" + binds.settings().selfUnbind
+                        + " §8| private-bind=" + cfg.getBoolean("private.allow-bind", false));
+                sender.sendMessage("§7限额: §f" + binds.settings().maxPerQq + "qq/"
+                        + binds.settings().maxPerPlayer + "player/"
+                        + cfg.getString("bind.limit-policy", "reject")
+                        + " §8| 冷却=" + binds.settings().cooldownSeconds + "s"
+                        + " §8| 码长=" + binds.settings().codeLength
+                        + " §8| 有效期=" + Math.max(1, cfg.getInt("bind.expire-minutes", 5)) + "m");
+                var groups = cfg.getStringList("groups.allowed");
+                sender.sendMessage("§7群: §f白名单" + groups.size() + "个"
+                        + (groups.isEmpty() ? "§c（空！）" : "")
+                        + " §8| allow-all=" + cfg.getBoolean("groups.allow-all", false)
+                        + " §8| 推荐群=" + (cfg.getString("groups.recommended", "").isEmpty() ? "无" : "已设"));
+                var st = endpoint.status();
+                sender.sendMessage("§7连接: §f" + st.mode() + " " + cfg.getString("onebot.listen-host", "0.0.0.0")
+                        + ":" + cfg.getInt("onebot.listen-port", 6700)
+                        + " §8| connected=" + st.connected()
+                        + " §8| self_id=" + st.selfId()
+                        + " §8| token=" + (cfg.getString("onebot.access-token", "").isEmpty() ? "§c未设置" : "已设置"));
+                sender.sendMessage("§7数据: §fbinds=" + binds.allBindings().size()
+                        + " §8| qqbans=" + binds.store().bannedQqs().size()
+                        + " §8| active_codes=" + binds.activeCodeCount()
+                        + " §8| admins=" + cfg.getStringList("admins.qq").size());
+                // 文件可写检查
+                var dataDir = plugin.getDataFolder().toPath();
+                boolean w1 = java.nio.file.Files.isWritable(dataDir.resolve("bindings.json"));
+                sender.sendMessage("§7文件: §fbindings.json " + (w1 ? "§a可写✓" : "§c不可写✗")
+                        + " §8| banned_qqs.json " + (java.nio.file.Files.isWritable(dataDir.resolve("banned_qqs.json")) ? "§a可写✓" : "§c不可写✗"));
+                if (!st.connected()) {
+                    sender.sendMessage("§c[QQGate] ⚠ 机器人未连接——绑定指令无响应，检查 NapCat 反向WS地址/端口/网络");
+                }
+                if (groups.isEmpty() && !cfg.getBoolean("groups.allow-all", false)) {
+                    sender.sendMessage("§c[QQGate] ⚠ 群白名单为空且未开 allow-all——所有群指令静默忽略");
+                }
+            }
         }
         return true;
     }
@@ -301,7 +341,7 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
                 §6[QQGate] 管理员命令：
                 §f  /qqgateadmin status              §7连接状态与统计
                 §f  /qqgateadmin codes               §7当前待验证码
-                §f  /qqgateadmin lookup <名|QQ>      §7查询绑定（拉黑QQ带⚠标记）
+                §f  /qqgateadmin diag                §7运行时配置自检（含健康警告）
                 §f  /qqgateadmin unbind <名|QQ> [QQ] §7解绑（多条列出，双参精确）
                 §f  /qqgateadmin unbindall <名|QQ>   §7清空目标全部绑定
                 §f  /qqgateadmin bind <玩家> <QQ>    §7代绑（跳过验证码）
@@ -314,7 +354,7 @@ public final class QQGateAdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("status", "codes", "lookup", "unbind", "unbindall", "bind", "qqban", "qqunban", "qqbans", "reload", "help").stream()
+            return List.of("status", "diag", "codes", "lookup", "unbind", "unbindall", "bind", "qqban", "qqunban", "qqbans", "reload", "help").stream()
                     .filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT)))
                     .toList();
         }

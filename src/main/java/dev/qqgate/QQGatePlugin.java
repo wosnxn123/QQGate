@@ -25,6 +25,7 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
     private BindStore store;
     private BindService bindService;
     private OneBotEndpoint endpoint;
+    private JoinListener joinListener;
 
     @Override
     public void onEnable() {
@@ -53,9 +54,9 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         this.endpoint = new OneBotEndpoint(this, getLogger());
         ChatMessageHandler chatHandler = new ChatMessageHandler(this, bindService, endpoint, getLogger());
         endpoint.setMessageHandler(chatHandler);
-        endpoint.start();
+        this.joinListener = new JoinListener(this, bindService);
+        getServer().getPluginManager().registerEvents(joinListener, this);
 
-        getServer().getPluginManager().registerEvents(new JoinListener(this, bindService), this);
 
         PluginCommand cmd = getCommand("qqgate");
         if (cmd != null) {
@@ -135,9 +136,14 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         return store;
     }
 
-    /** /qqgate reload：重读配置与数据文件，刷新运行参数（连接参数需重启）。 */
+    /** 登录拦截器的 OP 缓存值（diag 展示运行时真实读取值）。 */
+    public boolean joinListenerSkip() {
+        return joinListener != null && joinListener.isOpSkipBind();
+    }
+
     public void reloadAll() {
         reloadConfig();
         bindService.updateSettings(buildSettings());
+        if (joinListener != null) joinListener.refreshConfig();
     }
 }
