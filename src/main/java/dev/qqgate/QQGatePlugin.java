@@ -57,6 +57,8 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         this.joinListener = new JoinListener(this, bindService);
         getServer().getPluginManager().registerEvents(joinListener, this);
 
+        endpoint.start();
+
 
         PluginCommand cmd = getCommand("qqgate");
         if (cmd != null) {
