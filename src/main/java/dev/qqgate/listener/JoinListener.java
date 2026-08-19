@@ -42,24 +42,26 @@ public final class JoinListener implements Listener {
         }
         var player = event.getPlayer();
         var uuid = player.getUniqueId();
-        if (player.isOp()) {
-            return; // bypass：登录阶段权限插件未加载，仅 OP 判断
-        }
-        // ① QQ 黑名单（须在 isBound 放行前）：名下绑定的 QQ 被拉黑 → 拒绝
+        // ① QQ 黑名单：OP 不豁免（管理员账号涉案时黑名单仍生效）
         if (binds.hasBannedQq(uuid)) {
             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
                     plugin.configString("kick.banned-message",
                             "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>")));
             return;
         }
-        // ② 名字封禁：同名账号曾绑定被拉黑的 QQ → 拒绝（防原名字回流/顶替）
+        // ② 名字封禁：OP 同样不豁免
         if (binds.isNameBanned(player.getName())) {
             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
                     plugin.configString("kick.name-banned-message",
                             "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>")));
             return;
         }
-        // ③ 已绑定 → 放行，交给 AuthMe
+        // ③ OP 豁免（默认开启）：跳过"必须绑定"检查；黑名单已在上方对 OP 生效。
+        //    登录阶段权限插件未加载，无法查 qqgate.bypass 权限节点，仅能 isOp()。
+        if (player.isOp() && plugin.configBool("op-skip-bind-check", true)) {
+            return;
+        }
+        // ④ 已绑定 → 放行，交给 AuthMe
         if (binds.isBound(uuid)) {
             return;
         }
