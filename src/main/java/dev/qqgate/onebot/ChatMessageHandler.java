@@ -556,21 +556,36 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
 
     // ================= 通用 =================
 
-    /** 回执：群 → 引用原消息 + @发送者 + 换行 + 正文；私聊 → 纯文本私聊。 */
+    /**
+     * 回执：群 → 引用原消息 + @发送者 + 正文；私聊 → 纯文本。
+     *
+     * CQ 注入防护：正文里用户可控内容（玩家名/指令参数）可能携带 [CQ:...] 字样，
+     * NapCat 会将其解析为多媒体卡片——可被用于借机器人名义发钓鱼内容。
+     * 发送前破坏正文中的 CQ 码头（[CQ → [·CQ，零宽分隔），插件自己拼的
+     * reply/at 码在本方法内构造、不经过 sanitize，不受影响。
+     */
     private void reply(OneBotEndpoint.IncomingMessage msg, String text) {
+        // 先净化用户可控内容（含 {at} 占位符的原文本），再注入我们自己构造的 CQ 码
+        String safe = sanitizeCq(text);
         if (msg.isGroup()) {
             StringBuilder out = new StringBuilder();
             if (msg.messageId() != 0) {
                 out.append("[CQ:reply,id=").append(msg.messageId()).append(']');
             }
             String at = "[CQ:at,qq=" + msg.userId() + "]\n";
-            String body = text.replace("{at}", at).replace("{qq}", String.valueOf(msg.userId()));
+            String body = safe.replace("{at}", at).replace("{qq}", String.valueOf(msg.userId()));
             body = body.replace("\\n", "\n");
             endpoint.sendGroupMessage(msg.groupId(), out.append(body).toString());
         } else {
-            String body = text.replace("{at}", "").replace("{qq}", String.valueOf(msg.userId()));
-            endpoint.sendPrivateMessage(msg.userId(), body.replace("\\n", "\n").stripLeading());
+            String body = safe.replace("{at}", "").replace("{qq}", String.valueOf(msg.userId()));
+            body = body.replace("\\n", "\n").stripLeading();
+            endpoint.sendPrivateMessage(msg.userId(), body);
         }
+    }
+
+    /** 破坏正文中的 CQ 码头：[CQ → [·CQ（显示几乎无差，解析必失败）。 */
+    private static String sanitizeCq(String s) {
+        return s.replace("[CQ", "[·CQ");
     }
 
     private String msg(String path, String def) {

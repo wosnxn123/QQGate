@@ -414,5 +414,24 @@ class OneBotE2ETest {
         reply = bot.awaitMessage(5);
         assertTrue(reply.contains("绑定满"), reply);
     }
+
+    @Test
+    void cqInjectionNeutralized() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        // 双层防御验证：入站剥离 + sanitize 后，任何回执都不得携带可解析的恶意 CQ 码
+        // a) 常规注入：入站剥离正则直接删除（残余"查"无参数→静默或空目标回执）
+        bot.send(groupEventAdmin(777, 90001, "查 [CQ:record,file=http://evil/x.mp3]"));
+        String reply = bot.received.poll(3, TimeUnit.SECONDS);
+        if (reply != null) {
+            assertFalse(reply.matches("(?s).*\\[CQ:(record|image|share)[^]]*].*"),
+                    "回执不得含可解析恶意码: " + reply);
+        }
+        // b) 嵌套漏网形态：剥离后残余无害，sanitize 再兜底
+        bot.send(groupEventAdmin(777, 90001, "查 [CQ:share,url=http://evil]tricky]"));
+        String reply2 = bot.received.poll(3, TimeUnit.SECONDS);
+        if (reply2 != null) {
+            assertFalse(reply2.matches("(?s).*\\[CQ:share[^]]*].*"), "漏网形态亦不得成码: " + reply2);
+        }
+    }
 }
 
