@@ -55,16 +55,18 @@ public final class JoinListener implements Listener {
         var uuid = player.getUniqueId();
         // ① QQ 黑名单：OP 不豁免（管理员账号涉案时黑名单仍生效）
         if (binds.hasBannedQq(uuid)) {
-            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
-                    plugin.configString("kick.banned-message",
-                            "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>")));
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(renderBanKick(
+                    "kick.banned-message",
+                    "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>",
+                    binds.bannedReasonForUuid(uuid))));
             return;
         }
         // ② 名字封禁：OP 同样不豁免
         if (binds.isNameBanned(player.getName())) {
-            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(
-                    plugin.configString("kick.name-banned-message",
-                            "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>")));
+            event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(renderBanKick(
+                    "kick.name-banned-message",
+                    "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>",
+                    binds.bannedReasonForName(player.getName()))));
             return;
         }
         if (player.isOp() && opSkipBind) {
@@ -78,6 +80,12 @@ public final class JoinListener implements Listener {
         var code = binds.ensureCode(uuid, player.getName(), System.currentTimeMillis());
         Component msg = MM.deserialize(renderKickMessage(player.getName(), code));
         event.disallow(PlayerLoginEvent.Result.KICK_OTHER, msg);
+    }
+
+    /** 封禁踢出页渲染：{reason} → "（原因）"；无原因 → 空串（模板不留残括号）。 */
+    private String renderBanKick(String path, String def, String reason) {
+        return plugin.configString(path, def)
+                .replace("{reason}", BindService.reasonPart(reason));
     }
 
     /**

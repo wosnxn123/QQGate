@@ -242,6 +242,26 @@ public final class BindService {
     public boolean isNameBanned(String name) {
         return store.isNameBanned(name);
     }
+
+    /** QQ 的封禁原因（QQ侧回执展示用）；未拉黑返回 null。 */
+    public String bannedReasonOfQq(long qq) {
+        return store.bannedReasonOfQq(qq);
+    }
+
+    /** UUID 案底路径的封禁原因（踢出页展示用）；未拉黑返回 null。 */
+    public String bannedReasonForUuid(UUID uuid) {
+        return store.bannedReasonViaUuid(uuid);
+    }
+
+    /** 名字封禁路径的封禁原因（踢出页展示用）；未命中返回 null。 */
+    public String bannedReasonForName(String name) {
+        return store.bannedReasonViaName(name);
+    }
+
+    /** 封禁原因展示片段："（原因）"；无原因 → 空串（模板不留残括号）。 */
+    public static String reasonPart(String reason) {
+        return (reason == null || reason.isBlank()) ? "" : "（" + reason.strip() + "）";
+    }
     public BindResult attemptBind(String code, long qq, long now) {
         BindSettings s = settings;
         long cooldown = checkCooldown(qq, now);

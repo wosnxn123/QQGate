@@ -323,6 +323,30 @@ class BindServiceTest {
     }
 
     @Test
+    void bannedReasonReadableFromAllThreePaths() {
+        apply(new BindSettings.Builder().cooldownSeconds(0));
+        UUID u = UUID.randomUUID();
+        svc.ensureCode(u, "Steve", now);
+        svc.attemptBind(svc.ensureCode(u, "Steve", now + 1).code(), 10001L, now + 2);
+
+        svc.qqban(10001L, "外挂");
+        assertEquals("外挂", svc.bannedReasonOfQq(10001L));      // qqban 原样存储
+        assertEquals("外挂", svc.bannedReasonForUuid(u));       // UUID 案底路径
+        assertEquals("外挂", svc.bannedReasonForName("steve")); // 名字封禁路径（忽略大小写）
+        assertNull(svc.bannedReasonOfQq(10002L));               // 未拉黑 → null
+
+        // 无原因拉黑 → 空串，reasonPart 渲染为空（不留残括号）
+        svc.qqunban(10001L);
+        svc.qqban(10001L, "");
+        assertEquals("", svc.bannedReasonForUuid(u));
+        assertEquals("", svc.bannedReasonForName("Steve"));
+
+        assertEquals("", BindService.reasonPart(null));
+        assertEquals("", BindService.reasonPart("   "));
+        assertEquals("（外挂）", BindService.reasonPart(" 外挂 "));
+    }
+
+    @Test
     void qqBanPersistsAcrossLoad() {
         apply(new BindSettings.Builder().cooldownSeconds(0));
         UUID u = UUID.randomUUID();

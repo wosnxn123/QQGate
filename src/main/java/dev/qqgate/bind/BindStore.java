@@ -248,6 +248,39 @@ public final class BindStore {
         return bannedQqs.remove(qq) != null;
     }
 
+    /** QQ 的封禁原因（展示用）；未拉黑返回 null，旧格式缺原因字段返回 ""。 */
+    public synchronized String bannedReasonOfQq(long qq) {
+        String[] e = bannedQqs.get(qq);
+        return e == null ? null : reasonOrEmpty(e);
+    }
+
+    /** 玩家名下被拉黑 QQ 的封禁原因（踢出页展示）；无返回 null。 */
+    public synchronized String bannedReasonViaUuid(UUID uuid) {
+        for (Binding b : bindings) {
+            if (b.uuid().equals(uuid)) {
+                String[] e = bannedQqs.get(b.qq());
+                if (e != null) return reasonOrEmpty(e);
+            }
+        }
+        return null;
+    }
+
+    /** 名字封禁命中的封禁原因（踢出页展示）；无返回 null。 */
+    public synchronized String bannedReasonViaName(String name) {
+        if (name == null) return null;
+        for (Binding b : bindings) {
+            if (b.qq() != 0 && b.name().equalsIgnoreCase(name)) {
+                String[] e = bannedQqs.get(b.qq());
+                if (e != null) return reasonOrEmpty(e);
+            }
+        }
+        return null;
+    }
+
+    private static String reasonOrEmpty(String[] e) {
+        return e == null || e.length < 2 ? "" : e[1];
+    }
+
     /** 名字封禁：任何被拉黑 QQ 名下的玩家名（比对忽略大小写）。 */
     public synchronized boolean isNameBanned(String name) {
         if (name == null) return false;

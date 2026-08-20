@@ -6,11 +6,14 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+
+import org.yaml.snakeyaml.Yaml;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * ConfigUpgrader 场景测试（纯 Java，snakeyaml 来自 paper-api 传递依赖）。
+ * ConfigUpgrader 场景测试（snakeyaml 直读，避免依赖 Bukkit API）。
  */
 class ConfigUpgraderTest {
 
@@ -131,5 +134,64 @@ class ConfigUpgraderTest {
         // 无备份产生（文件未被改写）
         assertEquals(0, (int) java.util.stream.Stream.of(Files.list(dir).toArray())
                 .filter(p -> p.toString().contains(".bak-")).count());
+    }
+
+    @Test
+    void v7MigratesStockBanTextsToAddReason() throws Exception {
+        // v6 → v7：旧默认封禁文案补 {reason} 占位
+        String tpl = """
+                config-version: 7
+                kick:
+                  banned-message: "<red><b>该账号已被封禁</b></red>\\n<gray>原因：账号绑定的QQ已被服务器拉黑{reason}\\n如有异议请联系管理员申诉</gray>"
+                  name-banned-message: "<red><b>该名称已被封禁</b></red>\\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ{reason}\\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>"
+                messages:
+                  qq-banned: "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"
+                """;
+        Path f = dir.resolve("config.yml");
+        Files.writeString(f, """
+                config-version: 6
+                kick:
+                  banned-message: "<red><b>该账号已被封禁</b></red>\\n<gray>原因：账号绑定的QQ已被服务器拉黑\\n如有异议请联系管理员申诉</gray>"
+                  name-banned-message: "<red><b>该名称已被封禁</b></red>\\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>"
+                messages:
+                  qq-banned: "{at} 该QQ已被服务器拉黑，无法绑定；如有异议请联系管理员"
+                """);
+
+        var r = ConfigUpgrader.upgradeIfNeeded(f, tpl);
+        assertTrue(r.upgraded());
+        assertEquals(7, r.toVersion());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> back = new Yaml().load(Files.readString(f));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> kick = (Map<String, Object>) back.get("kick");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> messages = (Map<String, Object>) back.get("messages");
+        assertTrue(((String) kick.get("banned-message")).contains("拉黑{reason}"), back.toString());
+        assertTrue(((String) kick.get("name-banned-message")).contains("QQ{reason}"), back.toString());
+        assertTrue(((String) messages.get("qq-banned")).contains("拉黑{reason}"), back.toString());
+    }
+
+    @Test
+    void v7KeepsCustomizedBanTextUntouched() throws Exception {
+        String tpl = """
+                config-version: 7
+                kick:
+                  banned-message: "<red><b>该账号已被封禁</b></red>\\n<gray>原因：账号绑定的QQ已被服务器拉黑{reason}\\n如有异议请联系管理员申诉</gray>"
+                """;
+        Path f = dir.resolve("config.yml");
+        Files.writeString(f, """
+                config-version: 6
+                kick:
+                  banned-message: "自定义封禁文案"
+                """);
+
+        ConfigUpgrader.upgradeIfNeeded(f, tpl);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> back = new Yaml().load(Files.readString(f));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> kick = (Map<String, Object>) back.get("kick");
+        assertEquals("自定义封禁文案", kick.get("banned-message"));
     }
 }

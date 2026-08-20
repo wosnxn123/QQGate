@@ -66,6 +66,8 @@ public final class ConfigUpgrader {
 
         // 合并：模板为骨架，用户值优先
         MergeOutcome merged = deepMerge(current, template);
+        // v7 值迁移：旧默认封禁文案 → 带 {reason} 占位（用户改过的值不动）
+        migrateLegacyDefaults(merged.root());
         // 版本号对齐到模板
         merged.root().put("config-version", targetVersion);
 
@@ -76,6 +78,41 @@ public final class ConfigUpgrader {
     }
 
     private record MergeOutcome(Map<String, Object> root, int added) {
+    }
+
+    /** v7 文案迁移项：路径 + 旧默认值 + 新默认值。 */
+    private record TextMigration(String path, String oldDefault, String newDefault) { }
+
+    /** v7：封禁文案加 {reason} 占位。仅当值仍等于旧默认（未自定义）才替换。 */
+    private static final List<TextMigration> V7_TEXT_MIGRATIONS = List.of(
+            new TextMigration("kick.banned-message",
+                    "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑\n如有异议请联系管理员申诉</gray>",
+                    "<red><b>该账号已被封禁</b></red>\n<gray>原因：账号绑定的QQ已被服务器拉黑{reason}\n如有异议请联系管理员申诉</gray>"),
+            new TextMigration("kick.name-banned-message",
+                    "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>",
+                    "<red><b>该名称已被封禁</b></red>\n<gray>原因：此名称的历史账号曾绑定被拉黑的QQ{reason}\n如你是新玩家且首次使用此名称，请联系管理员处理</gray>"),
+            new TextMigration("messages.qq-banned",
+                    "{at} 该QQ已被服务器拉黑，无法绑定；如有异议请联系管理员",
+                    "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"));
+
+    /** 逐项比对替换：值与旧默认完全相等 → 换新默认；否则视为用户自定义，不动。 */
+    private static void migrateLegacyDefaults(Map<String, Object> root) {
+        for (TextMigration m : V7_TEXT_MIGRATIONS) {
+            String[] segs = m.path().split("\\.");
+            Map<String, Object> node = root;
+            for (int i = 0; i < segs.length - 1 && node != null; i++) {
+                Object next = node.get(segs[i]);
+                node = next instanceof Map ? castMap(next) : null;
+            }
+            if (node != null && m.oldDefault().equals(node.get(segs[segs.length - 1]))) {
+                node.put(segs[segs.length - 1], m.newDefault());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Object o) {
+        return (Map<String, Object>) o;
     }
 
     /**

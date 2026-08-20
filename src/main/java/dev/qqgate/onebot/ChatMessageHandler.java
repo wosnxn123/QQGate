@@ -488,7 +488,8 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
             case COOLDOWN -> msg("messages.cooldown", "{at} 操作太频繁，请 {seconds} 秒后再试")
                     .replace("{seconds}", String.valueOf(r.retryAfterSeconds()));
             case QQ_BANNED -> msg("messages.qq-banned",
-                    "{at} 该QQ已被服务器拉黑，无法绑定；如有异议请联系管理员");
+                            "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员")
+                    .replace("{reason}", BindService.reasonPart(binds.bannedReasonOfQq(msg.userId())));
         };
         reply(msg, reply);
         if (r.outcome() == BindService.Outcome.SUCCESS
