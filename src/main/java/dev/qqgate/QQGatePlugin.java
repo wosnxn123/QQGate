@@ -70,6 +70,7 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         if (adminCmd != null) {
             QQGateAdminCommand executor = new QQGateAdminCommand(this, bindService, endpoint);
             adminCmd.setExecutor(executor);
+            adminCmd.setTabCompleter(executor);
         }
         getServer().getAsyncScheduler().runAtFixedRate(this, t -> bindService.purgeExpired(),
                 30_000L, 30_000L, java.util.concurrent.TimeUnit.MILLISECONDS);

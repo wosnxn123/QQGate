@@ -84,8 +84,14 @@ public final class JoinListener implements Listener {
 
     /** 封禁踢出页渲染：{reason} → "（原因）"；无原因 → 空串（模板不留残括号）。 */
     private String renderBanKick(String path, String def, String reason) {
+        // 原因按纯文本渲染：先过 MiniMessage 转义再入模板，原因内容无法污染模板样式
         return plugin.configString(path, def)
-                .replace("{reason}", BindService.reasonPart(reason));
+                .replace("{reason}", reasonFragment(reason));
+    }
+
+    /** {reason} 片段：MiniMessage 标签转义 + 全角括号包裹；无原因 → 空串。 */
+    static String reasonFragment(String reason) {
+        return BindService.reasonPart(reason == null ? "" : MM.escapeTags(reason));
     }
 
     /**

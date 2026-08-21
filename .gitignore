@@ -5,3 +5,4 @@ run/
 .idea/
 .project
 .settings/
+omp-session-*.html
