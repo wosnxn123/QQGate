@@ -1,5 +1,6 @@
 package dev.qqgate;
 
+import dev.qqgate.admin.AdminOps;
 import dev.qqgate.bind.BindService;
 import dev.qqgate.bind.BindSettings;
 import dev.qqgate.bind.BindStore;
@@ -7,6 +8,7 @@ import dev.qqgate.command.QQGateAdminCommand;
 import dev.qqgate.command.QQGateCommand;
 import dev.qqgate.listener.JoinListener;
 import dev.qqgate.onebot.ChatMessageHandler;
+import dev.qqgate.onebot.MsgRenderer;
 import dev.qqgate.onebot.OneBotEndpoint;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -53,7 +55,11 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         this.bindService.updateSettings(buildSettings());
 
         this.endpoint = new OneBotEndpoint(this, getLogger());
-        ChatMessageHandler chatHandler = new ChatMessageHandler(this, bindService, endpoint, getLogger());
+        // 文案契约：启动期先校验用户模板里的未知占位符（含 v8 残留 {result}），再装配 handler
+        MsgRenderer renderer = new MsgRenderer(this, getLogger()::warning);
+        renderer.validateAll(getLogger()::warning);
+        ChatMessageHandler chatHandler = new ChatMessageHandler(this, bindService, endpoint, getLogger(),
+                renderer, new AdminOps(bindService));
         endpoint.setMessageHandler(chatHandler);
         this.joinListener = new JoinListener(this, bindService);
         getServer().getPluginManager().registerEvents(joinListener, this);

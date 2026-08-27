@@ -1,5 +1,5 @@
 # 配置结构版本（自动升级用，勿手改）
-config-version: 8
+config-version: 9
 
 # ============================================================
 #  QQGate 配置  |  改完用 /qqgateadmin reload 生效（连接段除外）
@@ -52,7 +52,7 @@ bind:
   code-length: 4                    # 位数（4~8，超范围自动收敛）
   expire-minutes: 5                 # 有效期（分钟，下限 1）；同时显示在踢出页
   expire-display: both              # 有效期显示：both=时长+时刻 | relative=仅时长 | absolute=仅时刻
-  time-format: "HH:mm"              # 绝对时刻格式（Java DateTimeFormatter 语法，如 "MM-dd HH:mm"）
+  time-format: "HH:mm"              # 验证码过期时刻格式（Java DateTimeFormatter 语法，如 "MM-dd HH:mm"）；只管踢出页/验证码回显，列表时间戳归 display.list-time-format
   time-zone: "default"              # "default"=跟随服务器时区，或 IANA 名如 "Asia/Shanghai"
   # /qqgate bind 游戏内验证码回显（占位符 {code} {group} {expire_minutes} {expire_time}）
   code-message: "<gold><b>QQGate</b></gold> <dark_gray>»</dark_gray> <yellow>你的验证码：<green><b>绑定 {code}</b></green>\n<gray>发送到群 <aqua>{group}</aqua> 完成绑定，有效期 {expire_minutes} 分钟（{expire_time} 前有效）</gray>"
@@ -69,6 +69,12 @@ bind:
   self-unbind: false
   cooldown-seconds: 10              # 指令冷却（按QQ计，绑定/解绑共享计时，错码也计入，防刷屏）
   refresh-on-rejoin: true           # 重连时刷新验证码有效期（关掉则未过期的旧码继续沿用）
+
+# ------------------------------ 显示格式 --------------------------------
+display:
+  # 列表时间戳格式：绑定列表/黑名单/管理查询等所有列表条目里 {time} 的格式
+  # （Java DateTimeFormatter 语法）。只管列表，验证码过期时刻归 bind.time-format
+  list-time-format: "yyyy-MM-dd HH:mm"
 
 # -------------------------------- 踢出页 --------------------------------
 kick:
@@ -99,10 +105,18 @@ debug: false                        # true 时控制台输出每条 OneBot 收�
 
 # ------------------------------ 回复文案 --------------------------------
 # QQ 指令的回复文案（\n 换行）。群回复自动引用触发消息并 @发送者；私聊为纯文本。
-# 占位符: {at}=艾特 {player}=游戏名 {qq}=QQ号 {count}/{max}=已绑/上限
-#         {remaining}=还可绑定几个 {old_player}=被挤下的玩家 {seconds}=冷却秒数
-#         {target}=查询/解绑目标 {result}/{detail}=代码生成的结果文本
-#         {reason}=封禁原因片段（无原因时为空）
+#
+# 全局占位符（插件自动注入，每个键都可用，无需写进模板也会生效）:
+#   {at}=艾特（群回复为 at 码+换行，私聊为空）  {sender}=发送者QQ
+# 业务占位符:
+#   {qq}=业务目标QQ（绑定/解绑/拉黑/查询的对象，绝不表示发送者；要显示发送者写 {sender}）
+#   {player}=游戏名 {count}/{max}=已绑/上限 {remaining}=还可绑定几个
+#   {old_player}=被挤下的玩家 {seconds}=冷却秒数 {target}=查询/解绑目标（原样输入）
+#   {index}=列表条目序号（从 1 开始）
+#   {time}=预渲染时间字符串，格式由 display.list-time-format + bind.time-zone 控制
+#   {detail}=被清绑定清单（"、"连接） {reason}=封禁原因片段（无条件时为空，不留残括号）
+#   {names}=名下账号名清单（"、"连接）
+#   {mode}/{connected}/{self_id}/{binds}/{codes}=状态查询五字段（模式/是否连上/机器人QQ/绑定数/活跃验证码数）
 messages:
   # ---- 玩家文案 ----
   bound: "{at} 绑定成功！\n游戏账号：{player}\n该QQ当前已绑定 {count}/{max} 个账号，还可绑定 {remaining} 个\n现在可以重新进入服务器了"
@@ -113,28 +127,44 @@ messages:
   qq-full: "{at} 该QQ已绑定满 {max} 个账号（{count}/{max}），请联系管理员"
   player-full: "{at} 该游戏账号已绑定满 {max} 个QQ，请联系管理员"
   cooldown: "{at} 操作太频繁，请 {seconds} 秒后再试"
+  qq-banned: "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"
   not-bound: "{at} 你当前没有绑定任何账号"                               # 查询/解绑时无绑定
   self-unbind-ok: "{at} 已解绑账号 {player}（该QQ还剩 {count} 个绑定）"
   self-unbind-notfound: "{at} 你名下没有名为 {player} 的绑定，发送「解绑」查看列表"
-  self-unbind-list: "{at} {result}"                                     # 查询/无参解绑的列表
-  qq-banned: "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"
-  qqban-ok: "{at} {result}"                                             # {result} = 拉黑详情（QQ号+原因+名下账号）；此模板只支持 {at} {result}
+  # 玩家绑定列表：头 + 每账号一条条目（+ 尾提示），取代旧键 self-unbind-list
+  self-unbind-list-header: "{at} 已绑定 {count}/{max} 个账号："
+  self-unbind-list-item: " {index}. {player}（{time}）"
+  self-unbind-list-hint: "解绑指定账号：解绑 <账号名>"                   # 仅 bind.self-unbind 开启时拼接
+  qqban-ok: "{at} 已拉黑 QQ {qq}{reason}"                               # 旧版整块文案拆解产物；名下封锁段见 qqban-ok-locked
+  qqban-ok-locked: "名下账号已封锁（绑定保留作案底）：{names}\n同名新连接将被拒绝；解拉黑后自动复原"  # 新增；仅名下有账号时拼接
   qqunban-ok: "{at} 已解除拉黑 QQ {qq}"
   qqunban-none: "{at} QQ {qq} 不在黑名单"                                # 解拉黑时该QQ本就未被拉黑
   admin-bind-banned: "{at} ⚠ QQ {qq} 已被拉黑，请先 解拉黑 {qq}"
   qqbans-empty: "{at} QQ 黑名单为空"
-  qqbans-list: "{at} {result}"
+  # 黑名单列表：头 + 每条黑名单一条条目，取代旧键 qqbans-list
+  qqbans-list-header: "{at} QQ 黑名单（{count} 条）："
+  qqbans-list-item: "  {qq} · {time}{reason}{names}"
   help: "{at} 可用指令：\n绑定 <验证码> —— 绑定游戏账号\n查询 —— 查看我的绑定"
 
   # ---- 管理员文案 ----
   admin-help: "{at} 管理员指令：\n查 <玩家名|QQ号> —— 查询绑定（拉黑QQ带⚠标记）\n解绑 <玩家名|QQ号> —— 解绑（多条会列出）\n解绑 <玩家名> <QQ号> —— 精确解绑\n全解绑 <玩家名|QQ号> —— 清空全部绑定\n绑定 <玩家名> <QQ号> —— 代绑\n拉黑 <QQ号> [原因] —— 拉黑QQ（名下+同名账号全封锁）\n解拉黑 <QQ号> —— 解除拉黑（自动复原）\n拉黑列表 —— 黑名单（含名下账号名）\n状态 —— 连接与统计"
-  admin-lookup: "{at} {result}"                                        # 查询结果（{result}为列表）
-  admin-lookup-empty: "{at} {target} 未找到绑定"
-  admin-unbind-notfound: "{at} {target} 无绑定（或未找到该组合）"
+  admin-lookup-banned-note: "⚠ 该QQ已被拉黑{reason}"                    # 新增；查黑名单QQ时拼在结果首行（无 {at}）
+  # 管理员查询：按方向拆键，取代旧键 admin-lookup
+  admin-lookup-qq-empty: "{at} QQ {qq} 未绑定任何账号"
+  admin-lookup-qq-header: "{at} QQ {qq} 绑定 {count} 个账号："
+  admin-lookup-qq-item: "  {player} · {time}"
+  admin-lookup-player-header: "{at} 玩家 {player} 绑定 {count} 个QQ："
+  admin-lookup-player-item: "  QQ {qq} · {time}"
+  admin-lookup-empty: "{at} 玩家 {target} 未绑定QQ"                     # 默认文案按实际分支语义修正
+  admin-unbind-notfound: "{at} {target} 无绑定"                         # 单参解绑/全解绑分支共用（旧文案的括号补充已删）
+  admin-unbind-notfound-exact: "{at} 未找到 {player} 与 QQ {qq} 的绑定"  # 新增；双参精确解绑分支
   admin-unbind-exact-ok: "{at} 已解绑 {player} <-> QQ {qq}（还剩 {count} 条）"
-  admin-unbind-ambiguous: "{at} {result}"                               # 多条绑定时的选择列表
+  # 多条绑定选择列表：头 + 条目 + 尾提示，取代旧键 admin-unbind-ambiguous
+  admin-unbind-ambiguous-header: "{at} {target} 名下有 {count} 条绑定："
+  admin-unbind-ambiguous-item: " {index}. QQ {qq}（{player}）"
+  admin-unbind-ambiguous-hint: "精确解绑：解绑 <玩家名> <QQ号>\n清空全部：全解绑 <目标>"
   admin-unbindall-ok: "{at} 已清空 {target} 名下 {count} 条绑定（{detail}）"
-  admin-bind-ok: "{at} 已绑定 {player} <-> QQ {qq}"
+  admin-bind-ok: "{at} 已绑定 {player} <-> QQ {qq}"                     # 挤下旧绑定时由代码追加"（挤下 X）"尾巴
   admin-bind-no-player: "{at} 未找到玩家 {player} 的既有绑定记录，无法定位UUID；请让玩家先进服一次，或使用游戏内 /qqgateadmin bind"
-  admin-bind-fail: "{at} 绑定失败"
-  admin-status: "{at} {result}"                                        # 状态查询结果
+  admin-bind-fail: "{at} 绑定失败"                                      # 死占位符 {reason} 已清除
+  admin-status: "{at} mode={mode} connected={connected} self_id={self_id} binds={binds} active_codes={codes}"  # 取代旧版整块结果占位符，五项独立字段

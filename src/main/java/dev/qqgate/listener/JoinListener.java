@@ -196,10 +196,8 @@ public final class JoinListener implements Listener {
                 + "\n【!】过期后重新进服即可刷新</gray>";
     }
 
+    /** 验证码过期时间统一走 EXPIRE preset：模式串/时区配置与降级都在 TimeFmt 内部。 */
     private String formatExpire(long epochMilli) {
-        return TimeFmt.format(epochMilli,
-                plugin.configString("bind.time-format", TimeFmt.FALLBACK_PATTERN),
-                plugin.configString("bind.time-zone", "default"),
-                plugin.getLogger()::warning);
+        return TimeFmt.format(TimeFmt.Preset.EXPIRE, epochMilli, plugin, plugin.getLogger()::warning);
     }
 }

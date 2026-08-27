@@ -125,7 +125,8 @@ class OneBotE2ETest {
         svc.updateSettings(new BindSettings.Builder().cooldownSeconds(0).build());
         MapConfig config = new MapConfig(cfg);
         endpoint = new OneBotEndpoint(config, Logger.getLogger("e2e"));
-        endpoint.setMessageHandler(new ChatMessageHandler(config, svc, endpoint, Logger.getLogger("e2e")));
+        endpoint.setMessageHandler(new ChatMessageHandler(config, svc, endpoint, Logger.getLogger("e2e"),
+                new MsgRenderer(config), new dev.qqgate.admin.AdminOps(svc)));
         endpoint.start();
 
         int port = awaitPort();
@@ -432,6 +433,71 @@ class OneBotE2ETest {
         if (reply2 != null) {
             assertFalse(reply2.matches("(?s).*\\[CQ:share[^]]*].*"), "漏网形态亦不得成码: " + reply2);
         }
+    }
+
+    /** 未替换占位符形态：小写字母加下划线包在花括号里（与 QqMsg.Field.token() 同构）。 */
+    private static final java.util.regex.Pattern LEFTOVER = java.util.regex.Pattern.compile("\\{[a-z_]+}");
+
+    private void assertNoPlaceholder(String frame, String cmd) {
+        assertNotNull(frame, "expected a reply for: " + cmd);
+        var m = LEFTOVER.matcher(frame);
+        if (m.find()) {
+            fail("回执残留未替换占位符 " + m.group() + "（指令「" + cmd + "」）: " + frame);
+        }
+    }
+
+    /** 发一条指令，扫本轮所有回帧（首帧必到；后续帧短轮询兜底），返回拼接文本供内容断言。 */
+    private String sendAndScan(long user, String cmd) throws Exception {
+        bot.received.clear();
+        bot.send(groupEventAdmin(777, user, cmd));
+        String first = bot.received.poll(5, TimeUnit.SECONDS);
+        assertNoPlaceholder(first, cmd);
+        StringBuilder all = new StringBuilder(first);
+        for (String more = bot.received.poll(300, TimeUnit.MILLISECONDS); more != null;
+                more = bot.received.poll(300, TimeUnit.MILLISECONDS)) {
+            assertNoPlaceholder(more, cmd);
+            all.append('\n').append(more);
+        }
+        return all.toString();
+    }
+
+    /**
+     * 文案契约回归：QQ 侧任何回执都不得带出未替换的 {xxx}。
+     *
+     * <p>1.6.0 之前的真实 bug：{@code admin-bind-no-player} 的 {player} 与
+     * {@code admin-lookup-empty} 的 {target} 从不替换，用户直接看到裸花括号；
+     * 另有五个键把整段结果塞进 {result}。本用例把 QQ 侧主要指令跑一遍，逐帧正则扫描，
+     * 任一键漏传字段即失败。
+     */
+    @Test
+    void noLeftoverPlaceholdersAcrossQqCommands() throws Exception {
+        cfg.put("admins.qq", List.of("90001"));
+        svc.updateSettings(new BindSettings.Builder().cooldownSeconds(0).selfUnbind(true).build());
+        UUID u = UUID.randomUUID();
+        var code = svc.ensureCode(u, "Steve", System.currentTimeMillis());
+
+        assertTrue(sendAndScan(90001, "帮助").contains("管理员指令"));
+        assertTrue(sendAndScan(10001, "绑定 " + code.code()).contains("Steve"));
+        assertTrue(sendAndScan(10001, "查询").contains("Steve"));
+        sendAndScan(10001, "绑定 " + code.code());              // 码已消费：错误/已用回执
+        assertTrue(sendAndScan(10001, "解绑").contains("Steve")); // 自助解绑列表（头+条目+提示）
+        assertTrue(sendAndScan(90001, "查 10001").contains("Steve"));
+        assertTrue(sendAndScan(90001, "查 Steve").contains("10001"));
+        // 回归：空结果分支必须替换 {target}
+        assertTrue(sendAndScan(90001, "查 NoSuchPlayer").contains("NoSuchPlayer"));
+        // 回归：20 位纯数字不再是数字目标，按玩家名处理且不崩
+        assertTrue(sendAndScan(90001, "查 99999999999999999999").contains("99999999999999999999"));
+        // 回归：无既有记录的代绑必须替换 {player}
+        assertTrue(sendAndScan(90001, "绑定 GhostPlayer 10009").contains("GhostPlayer"));
+        assertTrue(sendAndScan(90001, "拉黑 10001 外挂").contains("Steve"));
+        assertTrue(sendAndScan(90001, "拉黑列表").contains("10001"));
+        sendAndScan(90001, "解拉黑 10001");
+        sendAndScan(90001, "解拉黑 10001");                      // 第二次：不在黑名单分支
+        assertTrue(sendAndScan(90001, "解绑 Steve 10001").contains("Steve"));
+        sendAndScan(90001, "全解绑 10001");                      // 已无绑定：notfound 标签分支
+        String status = sendAndScan(90001, "状态");
+        assertTrue(status.contains("mode="), status);
+        assertTrue(status.contains("binds="), status);
     }
 }
 

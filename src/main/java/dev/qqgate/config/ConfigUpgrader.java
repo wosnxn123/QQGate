@@ -13,12 +13,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * 配置自动升级：旧 config.yml 与内置模板按顶层段合并，补齐缺失键。
  *
  * 规则：
- * - 值只增不改：旧文件已有的键值与顶层键序原样保留，已废弃键保留不动
+ * - 值只增不改：旧文件已有的键值与顶层键序原样保留；仅两类有序迁移例外——
+ *   语义变更的默认文案（v7/v9）在未自定义旧值时迁移，无代码路径的退役键（v9）主动移除并按名告警自定义者
  * - 缺段整段追加；段内缺键在段尾追加
  * - 注释一律丢失：写回是 snakeyaml dump 全文重写，用户手写注释与模板行注释
  *   都还不回来（不只是新增段受影响）；文件头会如实写明并指向备份文件
@@ -37,6 +39,9 @@ public final class ConfigUpgrader {
 
     private ConfigUpgrader() {
     }
+
+    /** 与插件日志同名（plugin.yml name: QQGate）：升级告警直接打进服务器控制台。 */
+    private static final Logger LOG = Logger.getLogger("QQGate");
 
     /**
      * 执行升级检查。
@@ -67,8 +72,10 @@ public final class ConfigUpgrader {
 
         // 合并：模板为骨架，用户值优先
         MergeOutcome merged = deepMerge(current, template);
-        // v7 值迁移：旧默认封禁文案 → 带 {reason} 占位（用户改过的值不动）
+        // 值迁移：语义变更的默认文案仅在值仍等于旧默认（未自定义）时换新默认；用户改过的值不动
         migrateLegacyDefaults(merged.root());
+        // 退役键清理（v9）：无代码路径的旧键必须主动移除（deepMerge 只增不删），自定义过的点名告警
+        removeRetiredKeys(merged.root());
         // 版本号对齐到模板
         merged.root().put("config-version", targetVersion);
 
@@ -82,7 +89,7 @@ public final class ConfigUpgrader {
     private record MergeOutcome(Map<String, Object> root, int added) {
     }
 
-    /** v7 文案迁移项：路径 + 旧默认值 + 新默认值。 */
+    /** 文案迁移项：路径 + 旧默认值 + 新默认值。 */
     private record TextMigration(String path, String oldDefault, String newDefault) { }
 
     /** v7：封禁文案加 {reason} 占位。仅当值仍等于旧默认（未自定义）才替换。 */
@@ -97,9 +104,33 @@ public final class ConfigUpgrader {
                     "{at} 该QQ已被服务器拉黑，无法绑定；如有异议请联系管理员",
                     "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"));
 
-    /** 逐项比对替换：值与旧默认完全相等 → 换新默认；否则视为用户自定义，不动。 */
+    /**
+     * v9 语义修复键：路径保留但默认文案改写（{result} 拆解、死占位符清除）。
+     * 未自定义的旧默认照迁移；自定义值原样保留——残留 {result} 会在启动期被
+     * MsgRenderer.validateAll 当未知 token 告警，由管理员按告警自行修正。
+     */
+    private static final List<TextMigration> V9_TEXT_MIGRATIONS = List.of(
+            new TextMigration("messages.qqban-ok",
+                    "{at} {result}",
+                    "{at} 已拉黑 QQ {qq}{reason}"),
+            new TextMigration("messages.admin-status",
+                    "{at} {result}",
+                    "{at} mode={mode} connected={connected} self_id={self_id} binds={binds} active_codes={codes}"),
+            new TextMigration("messages.admin-lookup-empty",
+                    "{at} {target} 未找到绑定",
+                    "{at} 玩家 {target} 未绑定QQ"),
+            new TextMigration("messages.admin-unbind-notfound",
+                    "{at} {target} 无绑定（或未找到该组合）",
+                    "{at} {target} 无绑定"));
+
     private static void migrateLegacyDefaults(Map<String, Object> root) {
-        for (TextMigration m : V7_TEXT_MIGRATIONS) {
+        applyTextMigrations(root, V7_TEXT_MIGRATIONS);
+        applyTextMigrations(root, V9_TEXT_MIGRATIONS);
+    }
+
+    /** 逐项比对替换：值与旧默认完全相等 → 换新默认；否则视为用户自定义，不动。 */
+    private static void applyTextMigrations(Map<String, Object> root, List<TextMigration> migrations) {
+        for (TextMigration m : migrations) {
             String[] segs = m.path().split("\\.");
             Map<String, Object> node = root;
             for (int i = 0; i < segs.length - 1 && node != null; i++) {
@@ -108,6 +139,55 @@ public final class ConfigUpgrader {
             }
             if (node != null && m.oldDefault().equals(node.get(segs[segs.length - 1]))) {
                 node.put(segs[segs.length - 1], m.newDefault());
+            }
+        }
+    }
+
+    /** v9 退役键：配置路径 + 旧默认值（判断是否自定义过）+ 拆成的新键（告警点名）。 */
+    private record RetiredKey(String path, String oldDefault, List<String> newKeys) { }
+
+    /**
+     * v9 退役键表：塞 {result} 的旧单键已拆成 头/条目/提示 多键，代码不再读取旧路径。
+     * deepMerge 只增不删，升级时必须主动移除，否则用户会以为自己的自定义排版还生效。
+     */
+    private static final List<RetiredKey> V9_RETIRED_KEYS = List.of(
+            new RetiredKey("messages.self-unbind-list", "{at} {result}", List.of(
+                    "messages.self-unbind-list-header",
+                    "messages.self-unbind-list-item",
+                    "messages.self-unbind-list-hint")),
+            new RetiredKey("messages.qqbans-list", "{at} {result}", List.of(
+                    "messages.qqbans-list-header",
+                    "messages.qqbans-list-item")),
+            new RetiredKey("messages.admin-lookup", "{at} {result}", List.of(
+                    "messages.admin-lookup-banned-note",
+                    "messages.admin-lookup-qq-empty",
+                    "messages.admin-lookup-qq-header",
+                    "messages.admin-lookup-qq-item",
+                    "messages.admin-lookup-player-header",
+                    "messages.admin-lookup-player-item")),
+            new RetiredKey("messages.admin-unbind-ambiguous", "{at} {result}", List.of(
+                    "messages.admin-unbind-ambiguous-header",
+                    "messages.admin-unbind-ambiguous-item",
+                    "messages.admin-unbind-ambiguous-hint")));
+
+    /**
+     * 移除退役键；值与旧默认不同（即用户自定义过）的键各打一条告警，点名拆成的新键，
+     * 提示按新键重新自定义。值仍为旧默认的键静默移除，避免刷屏。
+     */
+    private static void removeRetiredKeys(Map<String, Object> root) {
+        for (RetiredKey r : V9_RETIRED_KEYS) {
+            String[] segs = r.path().split("\\.");
+            Map<String, Object> node = root;
+            for (int i = 0; i < segs.length - 1 && node != null; i++) {
+                Object next = node.get(segs[i]);
+                node = next instanceof Map ? castMap(next) : null;
+            }
+            if (node == null || !node.containsKey(segs[segs.length - 1])) continue;
+            Object old = node.remove(segs[segs.length - 1]);
+            if (!r.oldDefault().equals(old)) {
+                LOG.warning("配置键 " + r.path() + " 已退役并被移除（v9 拆键重构后代码不再读取）；"
+                        + "你自定义的文案已失效，新结构拆为：" + String.join("、", r.newKeys())
+                        + "，请按新键重新自定义");
             }
         }
     }

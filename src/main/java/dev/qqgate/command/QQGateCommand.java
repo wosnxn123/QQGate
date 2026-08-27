@@ -107,10 +107,10 @@ public final class QQGateCommand implements CommandExecutor, TabCompleter {
             return;
         }
         player.sendMessage(Msg.title("你的绑定 §e" + mine.size() + "§f/§e" + settings.maxPerPlayer));
-        String zone = plugin.configString("bind.time-zone", "default");
+        // 列表时间戳统一走 LIST preset：模式串/时区配置与降级都在 TimeFmt 内部
         for (BindStore.Binding b : mine) {
             player.sendMessage(Msg.item("QQ " + maskQq(b.qq()),
-                    "绑定于 " + TimeFmt.format(b.boundAt(), "yyyy-MM-dd HH:mm", zone,
+                    "绑定于 " + TimeFmt.format(TimeFmt.Preset.LIST, b.boundAt(), plugin,
                             plugin.getLogger()::warning)));
         }
         if (settings.selfUnbind) {
@@ -166,11 +166,9 @@ public final class QQGateCommand implements CommandExecutor, TabCompleter {
         return groups.isEmpty() ? "（未配置群号）" : groups.get(0);
     }
 
+    /** 验证码过期时间统一走 EXPIRE preset：模式串/时区配置与降级都在 TimeFmt 内部。 */
     private String formatExpire(long epochMilli) {
-        return TimeFmt.format(epochMilli,
-                plugin.configString("bind.time-format", TimeFmt.FALLBACK_PATTERN),
-                plugin.configString("bind.time-zone", "default"),
-                plugin.getLogger()::warning);
+        return TimeFmt.format(TimeFmt.Preset.EXPIRE, epochMilli, plugin, plugin.getLogger()::warning);
     }
 
     private void sendHelp(Player player) {
