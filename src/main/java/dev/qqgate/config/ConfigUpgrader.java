@@ -17,12 +17,13 @@ import java.util.Map;
 /**
  * 配置自动升级：旧 config.yml 与内置模板按顶层段合并，补齐缺失键。
  *
- * 规则（保守）：
- * - 只增不改：旧文件已有的键值/注释/顺序原样保留
- * - 缺段整段追加；段内缺键在段尾追加（含模板行注释）
- * - 已废弃键保留不动
+ * 规则：
+ * - 值只增不改：旧文件已有的键值与顶层键序原样保留，已废弃键保留不动
+ * - 缺段整段追加；段内缺键在段尾追加
+ * - 注释一律丢失：写回是 snakeyaml dump 全文重写，用户手写注释与模板行注释
+ *   都还不回来（不只是新增段受影响）；文件头会如实写明并指向备份文件
  * - 写回前备份原文件为 config.yml.bak-<时间戳>
- * - config-version 已是最新 → 完全不动文件
+ * - config-version 已是最新 → 完全不动文件（注释也就不会无谓丢失）
  *
  * 纯 Java + snakeyaml（服务端自带），可单测。
  */
@@ -71,7 +72,8 @@ public final class ConfigUpgrader {
         // 版本号对齐到模板
         merged.root().put("config-version", targetVersion);
 
-        String mergedText = renderWithHeader(merged.root(), templateText, targetVersion, merged.added());
+        String mergedText = renderWithHeader(merged.root(), targetVersion, merged.added(),
+                backup.getFileName().toString());
         Files.writeString(configFile, mergedText, StandardCharsets.UTF_8);
         return new Result(true, currentVersion, targetVersion, merged.added(),
                 backup.getFileName().toString());
@@ -193,19 +195,21 @@ public final class ConfigUpgrader {
     }
 
     /**
-     * 渲染：顶层用块式 YAML；保留顶层键序（用户原序 + 新段尾随）。
-     * 注释无法从 snakeyaml 还原——新段/新键的注释丢失是已知取舍，
-     * 由升级日志提示用户可查模板原文。
+     * 渲染：snakeyaml dump 全文重写，顶层键序保留（用户原序 + 新段尾随）。
+     * 代价是原文件所有注释（含用户手写的）都拿不回来，只有键值与顺序保得住——
+     * 文件头必须如实告知并给出备份文件名，别让用户以为只丢了新增段的注释。
      */
-    private static String renderWithHeader(Map<String, Object> root, String templateText,
-                                           int targetVersion, int added) {
+    private static String renderWithHeader(Map<String, Object> root, int targetVersion,
+                                           int added, String backupName) {
         DumperOptions opts = new DumperOptions();
         opts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         opts.setProcessComments(false);
         String body = new Yaml(opts).dump(root);
         String header = "# QQGate 配置 | 已自动升级到 v" + targetVersion
-                + "（本次新增 " + added + " 项，默认值生效；用户已有设置全部保留）\n"
-                + "# 新增项的说明注释见插件内模板或仓库 src/main/resources/config.yml\n"
+                + "（新增 " + added + " 项，取模板默认值）\n"
+                + "# 注意：升级为整文件重写，本文件原有的注释（含你手写的）已全部丢失；\n"
+                + "#       自定义值与键顺序均已保留，原文件完整备份在同目录 " + backupName + "\n"
+                + "# 各项说明见插件内模板或仓库 src/main/resources/config.yml\n"
                 + "# 改完用 /qqgateadmin reload 生效（连接段除外）\n\n";
         return header + body;
     }

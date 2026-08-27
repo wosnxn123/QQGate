@@ -16,7 +16,7 @@ Minecraft QQ 绑定门禁插件 —— 玩家进服前须完成 QQ 绑定，适�
 
 - **Folia 兼容**：`folia-supported: true`，WS 线程零 Bukkit 调用，游戏侧操作全部经区域调度器
 - **OneBot 11 标准协议**：反向 WebSocket（推荐，NapCat/LLOneBot）+ 正向 WebSocket（Lagrange）双模式
-- **验证码安全**：4~8 位、5 分钟时效、一码一用、重连刷新、码只在踢出屏出现
+- **验证码安全**：4~8 位、5 分钟时效、一码一用、重连刷新、码只出现在踢出屏与本人聊天栏
 - **限额策略**：`max-per-qq` / `max-per-player` 双向限额，`reject`（拒绝）或 `replace`（自动挤掉最早的，换绑自助）
 - **私聊绑定**：可选开启私聊机器人完成绑定
 - **智能群引导**：踢出页按模式展示——白名单模式列全部群；`allow-all` 模式显示推荐群（★）或"机器人所在任意群"；私聊开启时附提示
@@ -52,6 +52,8 @@ groups:
   allowed: [你的群号]        # 白名单群（踢出页会全部显示）
   # recommended: "主群号"    # 可选：仅 allow-all 模式下作为踢出页官方入口展示
 ```
+
+**安全**：reverse-ws 必须设 `access-token`，或把 `listen-host` 设为回环地址（协议端与 MC 同机）。两者都不满足时插件**拒绝启动监听**并报错——公网裸监听等于任何人都能连上来伪造管理员指令。确认是可信内网可用 `onebot.allow-insecure-bind: true` 强行放行（风险自担）。
 
 ### 3. 配置 NapCat
 
@@ -101,6 +103,7 @@ WebUI → 网络配置 → 新建 → **WebSocket 客户端**（反向 WS）：
 | `qqban <QQ号> [原因]` | 拉黑QQ（绑定保留作案底：名下账号+同名账号+该QQ全封锁） |
 | `qqunban <QQ号>` / `qqbans` | 解除拉黑（自动复原）/ 黑名单列表（含名下账号名） |
 | `reload` | 热重载配置（连接段除外） |
+| `help` | 管理员子命令列表 |
 
 ### 管理员 QQ 指令（`admins.qq` 白名单 + 通道开关）
 
@@ -119,7 +122,7 @@ WebUI → 网络配置 → 新建 → **WebSocket 客户端**（反向 WS）：
 | 权限 | 说明 | 默认 |
 |---|---|---|
 | `qqgate.admin` | 管理命令 | OP |
-| `qqgate.bypass` | 跳过绑定检查 | OP |
+| `qqgate.bypass` | 跳过绑定拦截（免绑定进服）；QQ 黑名单与名字封禁不豁免 | 不授予（需权限插件手动给；OP 豁免另由 `kick.op-skip-bind-check` 管） |
 
 ## 从源码构建
 
@@ -143,13 +146,14 @@ src/main/java/dev/qqgate/
 ├── QQGatePlugin.java        # 装配 + 生命周期
 ├── BotConfig.java           # 纯 Java 配置窄接口（可脱离服务器单测）
 ├── bind/                    # BindSettings · BindStore(持久化) · BindService(裁决核心)
+├── config/ConfigUpgrader    # config-version 自动升级（合并模板 + 备份原文件）
 ├── listener/JoinListener    # PlayerLoginEvent 拦截
 ├── onebot/                  # OneBotEndpoint(WS双模式) · ChatMessageHandler(群/私聊)
 ├── command/                 # QQGateCommand(玩家) · QQGateAdminCommand(管理)
 └── util/Schedulers          # Folia 调度纪律
 ```
 
-核心逻辑（`bind/` 与 `onebot/`）**不依赖 Bukkit**，绑定裁决、验证码生命周期、限额策略全部可用纯 JUnit 测试覆盖（29 个用例，含真实 WebSocket 握手的端到端模拟）。
+核心逻辑（`bind/` 与 `onebot/`）**不依赖 Bukkit**，绑定裁决、验证码生命周期、限额策略、配置升级全部由纯 JUnit 覆盖（含真实 WebSocket 握手的端到端模拟）。
 
 ## 常见问题
 

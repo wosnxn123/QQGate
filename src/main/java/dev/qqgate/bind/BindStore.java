@@ -7,12 +7,19 @@ import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * 绑定数据：内存态 + JSON 持久化。纯 Java（无 Bukkit 依赖），可单测。
@@ -30,104 +37,162 @@ public final class BindStore {
     private static final Type LIST_TYPE = new TypeToken<List<Binding>>() {
     }.getType();
 
+    private static final String DEFAULT_FILE = "bindings.json";
+    private static final String BAN_FILE = "banned_qqs.json";
+    private static final Type BAN_TYPE = new TypeToken<Map<Long, String[]>>() {
+    }.getType();
+    private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
     private final Path file;
     private final Path banFile;
     private final BooleanSupplier prettyPrint;
+    private final Consumer<String> warn;
     private final List<Binding> bindings = new ArrayList<>();
     /** QQ 黑名单：qq -> (拉黑时间, 原因)。 */
-    private final java.util.Map<Long, String[]> bannedQqs = new java.util.LinkedHashMap<>();
+    private final Map<Long, String[]> bannedQqs = new LinkedHashMap<>();
     private final Object ioLock = new Object();
 
+    /** 默认入口：文件名 bindings.json，告警走 stderr。 */
     public BindStore(Path dataFolder, BooleanSupplier prettyPrint) {
-        this.file = dataFolder.resolve("bindings.json");
-        this.banFile = dataFolder.resolve("banned_qqs.json");
+        this(dataFolder, prettyPrint, DEFAULT_FILE, null);
+    }
+
+    /**
+     * @param storageFile storage.file 配置值：相对插件数据目录或绝对路径，非法则回退 bindings.json
+     * @param warn        告警信道（插件内接 getLogger()::warning），null 走 stderr
+     */
+    public BindStore(Path dataFolder, BooleanSupplier prettyPrint, String storageFile, Consumer<String> warn) {
+        this.warn = warn != null ? warn : msg -> System.err.println("[QQGate] " + msg);
+        this.file = resolveStorage(dataFolder, storageFile, this.warn);
+        this.banFile = this.file.resolveSibling(BAN_FILE);
         this.prettyPrint = prettyPrint;
     }
 
-    /** 从磁盘加载（覆盖内存态）：绑定 + QQ 黑名单。 */
+    /** storage.file → 实际路径：空/非法/越出数据目录一律回退默认名。 */
+    private static Path resolveStorage(Path dataFolder, String storageFile, Consumer<String> warn) {
+        if (storageFile == null || storageFile.isBlank()) {
+            return dataFolder.resolve(DEFAULT_FILE);
+        }
+        try {
+            Path candidate = Path.of(storageFile.trim());
+            if (candidate.isAbsolute()) {
+                return candidate;
+            }
+            Path resolved = dataFolder.resolve(candidate).normalize();
+            if (!resolved.startsWith(dataFolder.normalize())) {
+                warn.accept("storage.file 越出插件数据目录（" + storageFile + "），已回退 " + DEFAULT_FILE);
+                return dataFolder.resolve(DEFAULT_FILE);
+            }
+            return resolved;
+        } catch (RuntimeException e) {
+            warn.accept("storage.file 非法（" + storageFile + "）: " + e + "，已回退 " + DEFAULT_FILE);
+            return dataFolder.resolve(DEFAULT_FILE);
+        }
+    }
+
+    /** 实际使用的绑定文件路径（供 diag 展示）。 */
+    public Path file() {
+        return file;
+    }
+
+    /**
+     * 从磁盘加载（覆盖内存态）：绑定 + QQ 黑名单。
+     * <p>文件损坏/不可读时把原文件隔离为 {@code .corrupt-<时间戳>} 再以空态启动——
+     * 否则下一次 {@link #save()} 会用空数据原子覆盖掉全部绑定（静默数据丢失）。
+     */
     public synchronized void load() {
         synchronized (ioLock) {
-            List<Binding> loaded;
-            try {
-                if (Files.exists(file)) {
-                    String json = Files.readString(file, StandardCharsets.UTF_8);
-                    loaded = GSON.fromJson(json, LIST_TYPE);
-                    if (loaded == null) loaded = new ArrayList<>();
-                } else {
-                    loaded = new ArrayList<>();
-                }
-            } catch (Exception e) {
-                System.err.println("[QQGate] Failed to read bindings.json, starting empty: " + e);
-                loaded = new ArrayList<>();
-            }
+            List<Binding> loaded = readJson(file, LIST_TYPE, DEFAULT_FILE);
             synchronized (bindings) {
                 bindings.clear();
-                bindings.addAll(loaded);
+                if (loaded != null) bindings.addAll(loaded);
             }
-            java.util.Map<Long, String[]> bans;
-            try {
-                if (Files.exists(banFile)) {
-                    String json = Files.readString(banFile, StandardCharsets.UTF_8);
-                    java.lang.reflect.Type t = new com.google.gson.reflect.TypeToken<java.util.Map<Long, String[]>>() {
-                    }.getType();
-                    bans = GSON.fromJson(json, t);
-                    if (bans == null) bans = new java.util.LinkedHashMap<>();
-                } else {
-                    bans = new java.util.LinkedHashMap<>();
-                }
-            } catch (Exception e) {
-                System.err.println("[QQGate] Failed to read banned_qqs.json, starting empty: " + e);
-                bans = new java.util.LinkedHashMap<>();
-            }
+            Map<Long, String[]> bans = readJson(banFile, BAN_TYPE, BAN_FILE);
             synchronized (bannedQqs) {
                 bannedQqs.clear();
-                bannedQqs.putAll(bans);
+                if (bans != null) bannedQqs.putAll(bans);
             }
         }
     }
+
+    /** 读 JSON：不存在或空文件 → null（正常空态）；不可读/损坏 → 隔离原文件后 null。 */
+    private <T> T readJson(Path path, Type type, String label) {
+        if (!Files.exists(path)) {
+            return null;
+        }
+        String json;
+        try {
+            json = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            quarantine(path, label, e);
+            return null;
+        }
+        if (json.isBlank()) {
+            return null;
+        }
+        try {
+            T parsed = GSON.fromJson(json, type);
+            if (parsed == null) {
+                throw new IllegalStateException("JSON 顶层内容为 null");
+            }
+            return parsed;
+        } catch (RuntimeException e) {
+            quarantine(path, label, e);
+            return null;
+        }
+    }
+
+    /** 坏文件改名保留，让下一次 save() 覆盖不掉它。 */
+    private void quarantine(Path path, String label, Exception cause) {
+        Path kept = path.resolveSibling(path.getFileName() + ".corrupt-" + LocalDateTime.now().format(STAMP));
+        try {
+            Files.move(path, kept, StandardCopyOption.REPLACE_EXISTING);
+            warn.accept(label + " 损坏或不可读（" + cause + "）: 原文件已保留为 " + kept.getFileName()
+                    + "，本次以空数据启动；修好后改回原名再 /qqgateadmin reload");
+        } catch (IOException io) {
+            warn.accept(label + " 损坏或不可读（" + cause + "）且无法隔离（" + io
+                    + "）: 本次以空数据启动，请立刻手动备份 " + path + "，下一次保存会覆盖它");
+        }
+    }
+
     /** 异步/同步落盘由调用方决定调度。绑定 + QQ 黑名单一起写。 */
     public void save() {
         List<Binding> snapshot;
         synchronized (bindings) {
             snapshot = new ArrayList<>(bindings);
         }
-        String json;
-        if (prettyPrint.getAsBoolean()) {
-            json = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(snapshot);
-        } else {
-            json = GSON.toJson(snapshot);
-        }
-        synchronized (ioLock) {
-            try {
-                Files.createDirectories(file.getParent());
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-                Files.writeString(tmp, json, StandardCharsets.UTF_8);
-                Files.move(tmp, file,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException e) {
-                System.err.println("[QQGate] Failed to save bindings.json: " + e);
-            }
-        }
-        // 黑名单落盘（String[] = [时间戳, 原因]）
-        java.util.Map<Long, String[]> banSnapshot;
+        Map<Long, String[]> banSnapshot;
         synchronized (bannedQqs) {
-            banSnapshot = new java.util.LinkedHashMap<>(bannedQqs);
+            banSnapshot = new LinkedHashMap<>(bannedQqs);
         }
-        String banJson = (prettyPrint.getAsBoolean()
-                ? new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
-                : GSON).toJson(banSnapshot);
+        String json = toJson(snapshot);
+        String banJson = toJson(banSnapshot);
         synchronized (ioLock) {
+            writeAtomic(file, json, DEFAULT_FILE);
+            writeAtomic(banFile, banJson, BAN_FILE);
+        }
+    }
+
+    private String toJson(Object value) {
+        return (prettyPrint.getAsBoolean()
+                ? new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
+                : GSON).toJson(value);
+    }
+
+    /** temp + ATOMIC_MOVE；平台不支持原子改名时退普通改名，别让整次保存失败。 */
+    private void writeAtomic(Path path, String json, String label) {
+        try {
+            Files.createDirectories(path.getParent());
+            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+            Files.writeString(tmp, json, StandardCharsets.UTF_8);
             try {
-                Files.createDirectories(banFile.getParent());
-                Path tmp = banFile.resolveSibling(banFile.getFileName() + ".tmp");
-                Files.writeString(tmp, banJson, StandardCharsets.UTF_8);
-                Files.move(tmp, banFile,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException e) {
-                System.err.println("[QQGate] Failed to save banned_qqs.json: " + e);
+                Files.move(tmp, path,
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
             }
+        } catch (IOException e) {
+            warn.accept(label + " 保存失败: " + e);
         }
     }
 
@@ -175,6 +240,27 @@ public final class BindStore {
     /** 新增绑定。 */
     public synchronized void add(UUID uuid, String name, long qq, long now) {
         bindings.add(new Binding(uuid, name, qq, now));
+    }
+
+    /**
+     * 玩家改名后刷新绑定里记的名字。
+     * <p>名字封禁（{@link #isNameBanned}）按绑定里的名字比对，不刷新就意味着改名即可绕过封禁。
+     *
+     * @return 是否真的改动了绑定（调用方据此决定要不要落盘）
+     */
+    public synchronized boolean refreshName(UUID uuid, String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        boolean changed = false;
+        for (int i = 0; i < bindings.size(); i++) {
+            Binding b = bindings.get(i);
+            if (b.uuid().equals(uuid) && !name.equals(b.name())) {
+                bindings.set(i, new Binding(uuid, name, b.qq(), b.boundAt()));
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /** 挤掉该 QQ 名下最早绑定的账号（用于 limit-policy: replace）。返回被挤掉的绑定。 */

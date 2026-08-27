@@ -2,6 +2,8 @@ package dev.qqgate.listener;
 
 import dev.qqgate.QQGatePlugin;
 import dev.qqgate.bind.BindService;
+import dev.qqgate.util.Schedulers;
+import dev.qqgate.util.TimeFmt;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.event.EventHandler;
@@ -9,9 +11,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerLoginEvent;
 
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,6 +52,11 @@ public final class JoinListener implements Listener {
         }
         var player = event.getPlayer();
         var uuid = player.getUniqueId();
+        // ⓿ 改名同步：名字封禁按绑定里记的名字比对，不同步就等于「改名即绕过名字封禁」。
+        // 只动内存态，落盘扔异步线程（登录线程不做文件 IO）。
+        if (binds.refreshName(uuid, player.getName())) {
+            Schedulers.async(plugin, () -> binds.store().save());
+        }
         // ① QQ 黑名单：OP 不豁免（管理员账号涉案时黑名单仍生效）
         if (binds.hasBannedQq(uuid)) {
             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, MM.deserialize(renderBanKick(
@@ -69,7 +73,9 @@ public final class JoinListener implements Listener {
                     binds.bannedReasonForName(player.getName()))));
             return;
         }
-        if (player.isOp() && opSkipBind) {
+        // ③ 豁免：qqgate.bypass 权限，或 kick.op-skip-bind-check 开启时的 OP。
+        // 只跳过"未绑定"拦截；①② 在前，黑名单/名字封禁一律不豁免。
+        if (player.hasPermission("qqgate.bypass") || (player.isOp() && opSkipBind)) {
             return;
         }
         // ④ 已绑定 → 放行，交给 AuthMe
@@ -191,10 +197,9 @@ public final class JoinListener implements Listener {
     }
 
     private String formatExpire(long epochMilli) {
-        String pattern = plugin.configString("bind.time-format", "HH:mm");
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern(pattern);
-        String tz = plugin.configString("bind.time-zone", "default");
-        ZoneId zone = "default".equals(tz) ? ZoneId.systemDefault() : ZoneId.of(tz);
-        return fmt.format(Instant.ofEpochMilli(epochMilli).atZone(zone));
+        return TimeFmt.format(epochMilli,
+                plugin.configString("bind.time-format", TimeFmt.FALLBACK_PATTERN),
+                plugin.configString("bind.time-zone", "default"),
+                plugin.getLogger()::warning);
     }
 }

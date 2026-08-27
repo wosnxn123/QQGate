@@ -1,5 +1,5 @@
 # 配置结构版本（自动升级用，勿手改）
-config-version: 7
+config-version: 8
 
 # ============================================================
 #  QQGate 配置  |  改完用 /qqgateadmin reload 生效（连接段除外）
@@ -17,6 +17,9 @@ onebot:
   listen-port: 6700                 # reverse-ws 监听端口（防火墙需放行）
   forward-url: "ws://127.0.0.1:3001"  # forward-ws 目标地址
   access-token: ""                  # 鉴权令牌，必须与机器人端一致；留空=不鉴权（公网强烈不建议）
+  # 空 access-token + listen-host 不是回环地址 = 任何人都能连上来伪造管理员指令，
+  # 因此默认直接拒绝启动。true = 明知风险仍强行启动（仅限可信内网，风险自担）
+  allow-insecure-bind: false
   reconnect-seconds: 5              # forward-ws 断线自动重连间隔（秒）
   heartbeat-timeout-seconds: 60     # 超过该秒数无事件判定机器人离线（OneBot 默认心跳 15s）
   allowed-self-id: 0                # 只信任该机器人QQ号的事件；0 = 不限制（防其他机器人误连）
@@ -65,6 +68,7 @@ bind:
   # 无参「解绑」始终只列列表。false = 解绑指令静默忽略，找管理员处理。
   self-unbind: false
   cooldown-seconds: 10              # 指令冷却（按QQ计，绑定/解绑共享计时，错码也计入，防刷屏）
+  refresh-on-rejoin: true           # 重连时刷新验证码有效期（关掉则未过期的旧码继续沿用）
 
 # -------------------------------- 踢出页 --------------------------------
 kick:
@@ -87,7 +91,7 @@ kick:
 
 # -------------------------------- 存储 ----------------------------------
 storage:
-  file: bindings.json               # 绑定数据文件（相对 plugins/QQGate/，原子写入，可备份）
+  file: bindings.json               # 绑定数据文件：相对插件目录，也可填绝对路径；非法值回退 bindings.json
   pretty-print: true                # JSON 缩进输出，便于人工检查
 
 # ------------------------------- 调试开关 -------------------------------
@@ -114,8 +118,9 @@ messages:
   self-unbind-notfound: "{at} 你名下没有名为 {player} 的绑定，发送「解绑」查看列表"
   self-unbind-list: "{at} {result}"                                     # 查询/无参解绑的列表
   qq-banned: "{at} 该QQ已被服务器拉黑{reason}，无法绑定；如有异议请联系管理员"
-  qqban-ok: "{at} 已拉黑 QQ {qq}{reason_part}{cleared_part}"
+  qqban-ok: "{at} {result}"                                             # {result} = 拉黑详情（QQ号+原因+名下账号）；此模板只支持 {at} {result}
   qqunban-ok: "{at} 已解除拉黑 QQ {qq}"
+  qqunban-none: "{at} QQ {qq} 不在黑名单"                                # 解拉黑时该QQ本就未被拉黑
   admin-bind-banned: "{at} ⚠ QQ {qq} 已被拉黑，请先 解拉黑 {qq}"
   qqbans-empty: "{at} QQ 黑名单为空"
   qqbans-list: "{at} {result}"

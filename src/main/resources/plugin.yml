@@ -8,15 +8,15 @@ description: Minecraft <-> QQ binding gate with OneBot 11, Folia/Paper compatibl
 commands:
   qqgate:
     description: QQGate player command
-    usage: /qqgate <bind|info|help>
+    usage: /qqgate help - list player subcommands (bind/info/help)
   qqgateadmin:
     description: QQGate admin command
-    usage: /qqgateadmin <status|codes|lookup|unbind|bind|reload|help>
+    usage: /qqgateadmin help - list admin subcommands
     permission: qqgate.admin
 permissions:
   qqgate.admin:
     description: Admin command access
     default: op
   qqgate.bypass:
-    description: Skip bind check on join
-    default: op
+    description: Skip the join bind check (blacklisted QQ/name is still kicked)
+    default: false

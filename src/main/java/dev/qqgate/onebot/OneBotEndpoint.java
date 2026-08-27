@@ -94,15 +94,59 @@ public final class OneBotEndpoint {
         }
         activeConn.set(null);
         connectedSince = 0;
+        // 状态位一并清零：否则重连/重启后 status() 会报上一个机器人的 QQ 号，并按旧事件时间判活
+        lastEventAt = 0;
+        selfId = 0;
     }
 
     private void startReverse() {
         String host = config.configString("onebot.listen-host", "0.0.0.0");
         int port = config.configInt("onebot.listen-port", 6700);
+        if (!reverseBindPermitted(host, port)) {
+            running = false; // 不启动服务端：status() 仍可安全调用，stop() 幂等，插件不崩
+            return;
+        }
         reverseServer = new ReverseServer(new InetSocketAddress(host, port));
-        reverseServer.setConnectionLostTimeout(0);
+        // ping/pong 探测周期（秒）：机器人静默死亡（TCP 半开）时 java-websocket 约 1.5 个周期内
+        // 判定连接丢失并关闭，否则 sendFrame 会一直往死 socket 写。取心跳超时的一半，非法值兜 30。
+        int hb = config.configInt("onebot.heartbeat-timeout-seconds", 60);
+        reverseServer.setConnectionLostTimeout(hb > 0 ? Math.max(1, hb / 2) : 30);
         reverseServer.start();
         log.info("OneBot reverse-ws listening on " + host + ":" + port);
+    }
+
+    /**
+     * 空 access-token + 非回环监听 = 任何能连到该端口的人都能伪造管理员事件（远程解绑/拉黑/代绑）。
+     * 默认拒启监听；onebot.allow-insecure-bind=true 时降级为警告并照旧启动（可信内网）。
+     */
+    private boolean reverseBindPermitted(String host, int port) {
+        if (!config.configString("onebot.access-token", "").isEmpty() || isLoopbackHost(host)) {
+            return true;
+        }
+        if (config.configBool("onebot.allow-insecure-bind", false)) {
+            log.warning("OneBot 未鉴权监听 " + host + ":" + port
+                    + "（onebot.allow-insecure-bind=true 已放行）：任何能连到此端口的人都能伪造管理员事件，"
+                    + "请确认该端口仅在可信内网可达。");
+            return true;
+        }
+        log.severe("OneBot 反向监听未启动：onebot.access-token 为空，而 onebot.listen-host=" + host
+                + " 不是回环地址。");
+        log.severe("风险：任何能连到 " + host + ":" + port
+                + " 的人都能伪造管理员事件——远程解绑玩家、拉黑 QQ、给任意 QQ 代绑账号。");
+        log.severe("二选一修复：");
+        log.severe("  1) 把 onebot.access-token 设为一个随机长口令（机器人端 NapCat/LLOneBot 填同一个）；");
+        log.severe("  2) 或把 onebot.listen-host 改回 127.0.0.1（机器人与服务端同机时的推荐值）。");
+        log.severe("确实要在可信内网无鉴权运行：把 onebot.allow-insecure-bind 设为 true（默认 false）。");
+        return false;
+    }
+
+    /** 只认字面量回环地址，避免在启动线程上做 DNS 解析。 */
+    private static boolean isLoopbackHost(String host) {
+        String h = host == null ? "" : host.trim();
+        if (h.length() > 2 && h.charAt(0) == '[' && h.charAt(h.length() - 1) == ']') {
+            h = h.substring(1, h.length() - 1); // [::1] 写法
+        }
+        return h.startsWith("127.") || "::1".equals(h) || "localhost".equalsIgnoreCase(h);
     }
 
     /** reverse-ws 实际绑定端口（listen-port=0 时用于测试发现端口）。 */
@@ -119,25 +163,25 @@ public final class OneBotEndpoint {
 
     // ---------------- 发送 ----------------
 
-    /** 发群消息（文本，支持 CQ 码如 [CQ:at,qq=xxx]）。 */
-    public void sendGroupMessage(long groupId, String text) {
+    /** 发群消息（文本，支持 CQ 码如 [CQ:at,qq=xxx]）；false = 未连接或写入失败。 */
+    public boolean sendGroupMessage(long groupId, String text) {
         JsonObject params = new JsonObject();
         params.addProperty("group_id", groupId);
-        sendFrame("send_group_msg", params, "group " + groupId, text);
+        return sendFrame("send_group_msg", params, "group " + groupId, text);
     }
 
-    /** 发私聊消息。 */
-    public void sendPrivateMessage(long userId, String text) {
+    /** 发私聊消息；false = 未连接或写入失败。 */
+    public boolean sendPrivateMessage(long userId, String text) {
         JsonObject params = new JsonObject();
         params.addProperty("user_id", userId);
-        sendFrame("send_private_msg", params, "user " + userId, text);
+        return sendFrame("send_private_msg", params, "user " + userId, text);
     }
 
-    private void sendFrame(String action, JsonObject params, String target, String text) {
+    private boolean sendFrame(String action, JsonObject params, String target, String text) {
         WebSocket conn = activeConn.get();
         if (conn == null || !conn.isOpen()) {
             log.warning("OneBot not connected, drop message to " + target);
-            return;
+            return false;
         }
         // auto_escape 不设（默认 false）：消息内的 CQ 码（reply/at）需被 OneBot 端解析渲染。
         // 入站方向的用户昵称安全由 ChatMessageHandler 的 CQ 剥离正则保障。
@@ -150,7 +194,15 @@ public final class OneBotEndpoint {
         if (config.configBool("debug", false)) {
             log.info("[OneBot ->] " + json);
         }
-        conn.send(json);
+        try {
+            conn.send(json);
+        } catch (RuntimeException e) {
+            // isOpen() 与 send 之间连接可能已被关闭：WebsocketNotConnectedException 不能逃到调用方，
+            // 否则会走 onError 且回复静默丢失。
+            log.warning("OneBot send failed to " + target + ": " + e);
+            return false;
+        }
+        return true;
     }
 
     // ---------------- 事件处理（WS 线程）----------------
@@ -166,11 +218,13 @@ public final class OneBotEndpoint {
             return; // 非 JSON 对象帧
         }
         if (!event.has("post_type")) {
-            return; // API 响应（echo 回包）
+            logApiError(event); // API 响应（echo 回包）：只有 retcode != 0 才值得上报
+            return;
         }
         lastEventAt = System.currentTimeMillis();
-        if (event.has("self_id") && !event.get("self_id").isJsonNull()) {
-            selfId = event.get("self_id").getAsLong();
+        long sid = num(event, "self_id", 0);
+        if (sid != 0) {
+            selfId = sid;
         }
 
         long allowed = config.configInt("onebot.allowed-self-id", 0);
@@ -186,6 +240,36 @@ public final class OneBotEndpoint {
         // meta_event lifecycle/heartbeat 与 notice 不处理，仅刷新 lastEventAt
     }
 
+    /** echo 回包：retcode != 0 说明发消息被机器人端拒了（权限/被禁言/参数错），否则静默丢弃。 */
+    private void logApiError(JsonObject resp) {
+        JsonElement rc = resp.get("retcode");
+        if (rc == null || !rc.isJsonPrimitive()) {
+            return;
+        }
+        long code;
+        try {
+            code = rc.getAsLong();
+        } catch (NumberFormatException e) {
+            return;
+        }
+        if (code == 0) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder("OneBot API 调用失败: retcode=").append(code);
+        String status = str(resp, "status");
+        if (status != null) {
+            sb.append(" status=").append(status);
+        }
+        String wording = str(resp, "wording");
+        if (wording == null) {
+            wording = str(resp, "message");
+        }
+        if (wording != null && !wording.isEmpty()) {
+            sb.append(" msg=").append(wording);
+        }
+        log.warning(sb.toString());
+    }
+
     private void dispatchChat(JsonObject event, boolean isGroup) {
         String raw = str(event, "raw_message");
         if (raw == null) {
@@ -195,35 +279,34 @@ public final class OneBotEndpoint {
         if (l == null || raw == null) {
             return;
         }
-        JsonElement uid = event.get("user_id");
-        if (uid == null || uid.isJsonNull()) {
-            return;
+        long userId = num(event, "user_id", 0);
+        if (userId == 0) {
+            return; // user_id 缺失/非数字：无法归属，丢弃
         }
-        long groupId = 0;
-        if (isGroup) {
-            JsonElement g = event.get("group_id");
-            groupId = (g == null || g.isJsonNull()) ? 0 : g.getAsLong();
-        }
+        long groupId = isGroup ? num(event, "group_id", 0) : 0;
         l.onMessage(new IncomingMessage(
                 isGroup ? IncomingMessage.Scope.GROUP : IncomingMessage.Scope.PRIVATE,
-                groupId, uid.getAsLong(), raw, extractMessageId(event)));
+                groupId, userId, raw, num(event, "message_id", 0)));
     }
 
-    private static long extractMessageId(JsonObject event) {
-        JsonElement mid = event.get("message_id");
-        if (mid == null || mid.isJsonNull()) {
-            return 0;
+    /** 数字取值守卫：非 primitive（object/array）或非数字一律返回 def，绝不抛到 onError。 */
+    private static long num(JsonObject o, String key, long def) {
+        JsonElement e = o.get(key);
+        if (e == null || !e.isJsonPrimitive()) {
+            return def;
         }
         try {
-            return mid.getAsLong();
-        } catch (NumberFormatException e) {
-            return 0;
+            return e.getAsLong();
+        } catch (NumberFormatException ex) {
+            return def;
         }
     }
 
     private static String str(JsonObject o, String key) {
         JsonElement e = o.get(key);
-        return e == null || e.isJsonNull() ? null : e.getAsString();
+        // 非 primitive 调 getAsString() 会抛 UnsupportedOperationException：上游只要发
+        // {"post_type":{}} 就能把异常推到 onError，这里一律当缺省值。
+        return e == null || !e.isJsonPrimitive() ? null : e.getAsString();
     }
 
     /** message 为数组格式时拼出纯文本（@等非文本段丢弃）。 */
@@ -268,6 +351,7 @@ public final class OneBotEndpoint {
             prev.close(); // 单连接模型：新连接顶替旧连接
         }
         connectedSince = System.currentTimeMillis();
+        lastEventAt = connectedSince; // 首个事件到达前不拿上一次连接的时间判定心跳过期
         if (selfIdFromHeader > 0) selfId = selfIdFromHeader;
         log.info("OneBot connected" + (selfIdFromHeader > 0 ? " (self_id=" + selfIdFromHeader + ")" : ""));
     }
@@ -362,6 +446,7 @@ public final class OneBotEndpoint {
         public void onOpen(ServerHandshake handshake) {
             activeConn.set(this);
             connectedSince = System.currentTimeMillis();
+            lastEventAt = connectedSince; // 同 onConnectionOpen：避免首个事件前误报离线
             log.info("OneBot forward-ws connected to " + getURI());
         }
 

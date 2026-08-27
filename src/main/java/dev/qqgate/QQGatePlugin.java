@@ -45,7 +45,8 @@ public final class QQGatePlugin extends JavaPlugin implements BotConfig {
         saveDefaultConfig();
         Path dataFolder = getDataFolder().toPath();
 
-        this.store = new BindStore(dataFolder, () -> configBool("storage.pretty-print", true));
+        this.store = new BindStore(dataFolder, () -> configBool("storage.pretty-print", true),
+                configString("storage.file", "bindings.json"), getLogger()::warning);
         this.store.load();
 
         this.bindService = new BindService(store);

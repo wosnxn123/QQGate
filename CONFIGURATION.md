@@ -6,6 +6,17 @@
 
 ---
 
+## config-version — 配置版本与自动升级
+
+`config-version` 是配置结构版本号，**勿手改**。启动时插件拿它与内置模板比对：
+
+- 用户版本落后 → 自动补齐模板里新增的键（取默认值），你改过的值一律保留，版本号对齐到模板。
+- 升级前自动备份原文件为 `config.yml.bak-<yyyyMMdd-HHmmss>`（同目录）。
+- **升级会重写整个文件：你自己加的注释会丢失**（键值不受影响）。新增项的说明注释见仓库 `src/main/resources/config.yml`。
+- 版本已是最新 → 完全不动文件。
+
+---
+
 ## onebot — OneBot 连接
 
 ```yaml
@@ -15,6 +26,7 @@ onebot:
   listen-port: 6700
   forward-url: "ws://127.0.0.1:3001"
   access-token: ""
+  allow-insecure-bind: false
   reconnect-seconds: 5
   heartbeat-timeout-seconds: 60
   allowed-self-id: 0
@@ -27,6 +39,7 @@ onebot:
 | `listen-port` | `6700` | reverse-ws 监听端口 |
 | `forward-url` | `ws://127.0.0.1:3001` | forward-ws 模式的目标地址 |
 | `access-token` | `""` | 鉴权令牌，必须与机器人端一致。留空 = 不鉴权（公网部署强烈不建议） |
+| `allow-insecure-bind` | `false` | 安全阀：reverse-ws 模式下 `access-token` 为空、且 `listen-host` 不是回环地址（`127.0.0.1`/`::1`/`localhost`）时，插件**拒绝启动监听**并在控制台报错——不然任何人连上来都能伪造管理员指令。`true` = 明知风险强行启动（仅限可信内网） |
 | `reconnect-seconds` | `5` | forward-ws 断线重连间隔 |
 | `heartbeat-timeout-seconds` | `60` | 超过该秒数未收到任何事件判定机器人离线（OneBot 默认心跳 15s，60s = 4 倍余量） |
 | `allowed-self-id` | `0` | 只信任该机器人 QQ 号发来的事件，`0` = 不限制。防其他机器人误连 |
@@ -62,7 +75,7 @@ admins:
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `qq` | `[]` | QQ 管理员白名单。这些 QQ 可在群/私聊执行管理员指令（`查`/`解绑`/`全解绑`/`绑定 <名> <QQ>`/`状态`/`帮助`）。空 = QQ 侧管理功能整体关闭 |
+| `qq` | `[]` | QQ 管理员白名单。这些 QQ 可在群/私聊执行管理员指令（`查`/`解绑`/`全解绑`/`绑定 <名> <QQ>`/`拉黑`/`解拉黑`/`拉黑列表`/`状态`/`帮助`）。空 = QQ 侧管理功能整体关闭 |
 | `respond.group` | `true` | 群内是否响应管理员指令 |
 | `respond.private` | `true` | 私聊是否响应管理员指令 |
 
@@ -76,6 +89,7 @@ admins:
 ```yaml
 private:
   allow-bind: false
+```
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -107,7 +121,7 @@ bind:
 |---|---|---|
 | `code-length` | `4` | 验证码位数，4~8（超范围自动收敛） |
 | `expire-minutes` | `5` | 有效期（分钟），下限 1 |
-| `refresh-on-rejoin` | `true` | 玩家再次进服时作废旧码生成新码（防码泄露堆积）。`false` 时未过期旧码沿用 |
+| `refresh-on-rejoin` | `true` | 玩家再次进服（重连）时作废旧码、生成新码并刷新有效期（防码泄露堆积）。`false` = 未过期的旧码沿用 |
 | `code-message` | 见默认 | `/qqgate bind` 游戏内验证码回显模板（MiniMessage，占位符同 `kick.message`） |
 
 ### 有效期显示
@@ -142,21 +156,25 @@ bind:
 ```yaml
 kick:
   delay-ms: 0
+  op-skip-bind-check: true
   message: "..."
 ```
 
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `delay-ms` | `0` | 断开前延迟（毫秒）。拦截点已为 `PlayerLoginEvent`，通常保持 0；极端网络偶发"连接中断"时再试 300~800 |
+| `op-skip-bind-check` | `true` | OP 无需绑定 QQ 即可进服（跳过绑定拦截）；`false` = OP 也要绑定。QQ 黑名单与名字封禁对 OP 同样生效，不受此开关豁免 |
 | `banned-message` | 见默认 | 被拉黑 QQ 名下账号进服的踢出页（不显示验证码）；`{reason}` 为拉黑原因，按**纯文本**显示（内容中的 `<tag>` 原样出现，不影响模板样式） |
 | `name-banned-message` | 见默认 | 同名封禁（该名字曾绑定被拉黑QQ）进服的踢出页；`{reason}` 同上 |
 | `message` | 见默认 | 踢出页文案，MiniMessage 格式 |
+
 **可用占位符**：
 
 | 占位符 | 内容 |
 |---|---|
 | `{code}` | 验证码 |
-| `{group}` | 群号（`groups.allowed` 第一项） |
+| `{group_line}` | 群引导整行：白名单模式列出全部白名单群号（有推荐群则置顶标 ★）；`allow-all` 时为「机器人所在任意群」提示语；私聊绑定开启时追加提示行 |
+| `{group}` | 单个群号（推荐群 > 白名单第一项；`allow-all` 时为提示文本）。旧模板兼容用，新模板建议用 `{group_line}` |
 | `{player}` | 玩家名 |
 | `{expire_minutes}` | 有效期分钟数 |
 | `{expire_time}` | 过期绝对时刻（按 `time-format`/`time-zone` 渲染） |
@@ -174,8 +192,12 @@ storage:
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `file` | `bindings.json` | 数据文件（相对 `plugins/QQGate/`）。原子写入：tmp + ATOMIC_MOVE |
+| `file` | `bindings.json` | 绑定数据文件名，相对 `plugins/QQGate/`；也接受绝对路径。非法路径或越出数据目录时回退默认名。原子写入：tmp + ATOMIC_MOVE |
 | `pretty-print` | `true` | JSON 缩进，便于人工检查/备份 |
+
+QQ 黑名单文件 `banned_qqs.json` 固定与它同目录。
+
+**数据文件损坏/不可读时**：插件把原文件改名保留为 `<原名>.corrupt-<yyyyMMdd-HHmmss>`，以空数据启动并在控制台告警（不会静默清空后覆盖，绑定不会被永久丢弃）。人工修好后改回原名再 `/qqgateadmin reload`。
 
 ---
 
@@ -195,8 +217,9 @@ storage:
 | `cooldown` | 指令冷却中 |
 | `not-bound` | 解绑时无任何绑定 |
 | `self-unbind-ok` | 自助解绑成功 |
+| `qq-banned` | 被拉黑 QQ 尝试绑定（占位符 `{at}` `{qq}` `{reason}`，无原因时 `{reason}` 为空串） |
 
-**占位符**：`{at}` @发送者、`{player}` 游戏名、`{qq}` QQ 号、`{count}/{max}` 已绑/上限、`{remaining}` 剩余额度、`{old_player}` 被挤下的玩家、`{seconds}` 冷却秒数。
+**占位符**：`{at}` @发送者（私聊为空）、`{player}` 游戏名、`{qq}` QQ 号（默认为发送者 QQ；管理员解绑/代绑文案中为目标 QQ）、`{count}/{max}` 已绑/上限、`{remaining}` 剩余额度、`{old_player}` 被挤下的玩家、`{seconds}` 冷却秒数、`{target}` 查询/解绑目标、`{result}`/`{detail}` 代码生成的结果文本、`{reason}` 封禁原因片段。
 
 ---
 
@@ -213,6 +236,14 @@ storage:
 | `admin-unbindall-ok` | 全解绑成功 |
 | `admin-bind-ok` / `admin-bind-no-player` / `admin-bind-fail` | 管理员代绑：成功/玩家无记录/失败 |
 | `admin-status` | 管理员状态查询 |
+| `qqban-ok` | 拉黑成功（`{at}` `{result}`，`{result}` = 完整拉黑结果文本，含原因与名下账号） |
+| `qqunban-ok` | 解除拉黑成功（`{at}` `{qq}`，此处 `{qq}` 为被解除的 QQ） |
+| `qqunban-none` | 解拉黑时该 QQ 本就不在黑名单（`{at}` `{qq}`） |
+| `qqbans-empty` | 黑名单为空（仅 `{at}`） |
+| `qqbans-list` | 黑名单列表（`{at}` `{result}`；勿在此模板用 `{qq}`，它会被替成发送者 QQ） |
+| `admin-bind-banned` | 管理员代绑时目标 QQ 已被拉黑（`{at}` `{qq}` `{player}` `{count}` `{max}`，无 `{reason}`） |
+
+表中未列出的占位符不会被替换，会原样显示给用户。
 
 ## debug
 

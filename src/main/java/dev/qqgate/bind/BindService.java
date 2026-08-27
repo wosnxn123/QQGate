@@ -89,6 +89,7 @@ public final class BindService {
     }
 
     /** 生成不与活跃码冲突的随机数字码。调用方须持 serviceLock。 */
+    /** 生成不与活跃码/墓碑冲突的随机数字码。调用方须持 serviceLock。 */
     private String uniqueCode(long now) {
         BindSettings s = settings;
         for (int i = 0; i < 200; i++) {
@@ -97,12 +98,59 @@ public final class BindService {
                 sb.append(RANDOM.nextInt(10));
             }
             String code = sb.toString();
-            if (!codes.containsKey(code) && !tombstones.containsKey(code)) {
+            if (free(code)) {
                 return code;
             }
         }
-        // 4 位码空间 1 万，200 次全碰撞的概率 ~ 1e-8；兜底带时间位
-        return String.valueOf((now % 100000) + 100000);
+        // 随机 200 次全碰撞（4 位码空间 1 万，概率 ~1e-8，实际只在码位将满时出现）：
+        // 从时间位起线性探测。绝不能像以前那样直接返回 (now%100000)+100000 ——
+        // 同一毫秒段内的两名玩家会拿到同一个码，先发送者可把对方账号绑到自己 QQ 上。
+        long span = pow10(s.codeLength);
+        long base = Math.floorMod(now, span);
+        long probes = Math.min(span, 100_000L);
+        for (long i = 0; i < probes; i++) {
+            String code = pad((base + i) % span, s.codeLength);
+            if (free(code)) {
+                return code;
+            }
+        }
+        // 码位真被占满：挤掉最旧的活跃码腾位（那名玩家重连即可拿新码），而不是发重复码
+        PendingCode oldest = null;
+        for (PendingCode p : codes.values()) {
+            if (oldest == null || p.createdAt() < oldest.createdAt()) {
+                oldest = p;
+            }
+        }
+        if (oldest != null) {
+            codes.remove(oldest.code());
+            codeByUuid.remove(oldest.uuid(), oldest.code());
+            return oldest.code();
+        }
+        // 只剩墓碑占位：宁可把"已使用"误报成"错误码"，也不能发重复码
+        tombstones.clear();
+        return pad(base, s.codeLength);
+    }
+
+    /** 码位空闲：既非活跃码也非墓碑。 */
+    private boolean free(String code) {
+        return !codes.containsKey(code) && !tombstones.containsKey(code);
+    }
+
+    private static long pow10(int digits) {
+        long v = 1;
+        for (int i = 0; i < digits; i++) {
+            v *= 10;
+        }
+        return v;
+    }
+
+    /** 左补零到固定位数（超长取末尾 digits 位）。 */
+    private static String pad(long value, int digits) {
+        String s = Long.toString(value);
+        if (s.length() >= digits) {
+            return s.substring(s.length() - digits);
+        }
+        return "0".repeat(digits - s.length()) + s;
     }
 
     /** 清理过期码与墓碑。 */
@@ -159,21 +207,35 @@ public final class BindService {
         return store.findByQq(qq);
     }
 
+    /**
+     * 玩家改名后同步绑定里记的名字。名字封禁按绑定名比对，不同步就等于「改名即绕过封禁」。
+     * <p>只改内存态；返回 true 表示确有改动，落盘由调用方安排（登录线程别做文件 IO）。
+     */
+    public boolean refreshName(UUID uuid, String name) {
+        synchronized (serviceLock) {
+            return store.refreshName(uuid, name);
+        }
+    }
+
     // ---------------- 冷却 ----------------
 
-    /** 冷却检查+登记。未到冷却返回剩余秒数，否则登记本次并返回 0。 */
+    /** 冷却检查+登记（原子）：未到冷却返回剩余秒数，否则登记本次并返回 0。 */
     public long checkCooldown(long qq, long now) {
         BindSettings s = settings;
         if (s.cooldownSeconds <= 0) return 0;
-        Long last = lastAttempt.get(qq);
-        if (last != null) {
-            long elapsed = (now - last) / 1000L;
-            if (elapsed < s.cooldownSeconds) {
-                return s.cooldownSeconds - elapsed;
+        long[] remaining = {0L};
+        // compute 对同一 key 原子执行：同一 QQ 的两个并发 WS 事件不会双双穿过冷却
+        lastAttempt.compute(qq, (k, last) -> {
+            if (last != null) {
+                long elapsed = (now - last) / 1000L;
+                if (elapsed < s.cooldownSeconds) {
+                    remaining[0] = s.cooldownSeconds - elapsed;
+                    return last;
+                }
             }
-        }
-        lastAttempt.put(qq, now);
-        return 0;
+            return now;
+        });
+        return remaining[0];
     }
 
     // ---------------- 绑定裁决 ----------------
@@ -185,6 +247,9 @@ public final class BindService {
         BindSettings s = settings;
         synchronized (serviceLock) {
             if (store.isQqBanned(qq)) return BindResult.simple(Outcome.QQ_BANNED);
+            // 玩家名下已有被拉黑的 QQ：代绑同样拒绝。否则 REPLACE 策略会
+            // evictOldestOfUuid 删掉作案底绑定，等于替被封号的人变相解封。
+            if (store.isUuidBannedViaQq(uuid)) return BindResult.simple(Outcome.QQ_BANNED);
             for (BindStore.Binding b : store.findByUuid(uuid)) {
                 if (b.qq() == qq) {
                     return new BindResult(Outcome.ALREADY_BOUND, b, null, 0); // 已存在，幂等

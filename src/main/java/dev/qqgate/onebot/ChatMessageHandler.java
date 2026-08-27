@@ -71,6 +71,9 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
     private static final java.time.format.DateTimeFormatter TIME_FMT =
             java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm");
 
+    /** 数字目标（QQ号）位数上限：Long.MAX 是 19 位，18 位必然不会溢出 parseLong。 */
+    private static final int MAX_DIGITS = 18;
+
     private final BotConfig config;
     private final BindService binds;
     private final OneBotEndpoint endpoint;
@@ -120,7 +123,8 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
     /** 私聊是否开放：玩家开关开，或发送者是管理员且管理私聊通道开。 */
     private boolean privateOpenFor(long qq) {
         if (config.configBool("private.allow-bind", false)) return true;
-        return isAdmin(qq) && config.configBool("admins.respond.private", false);
+        // 默认 true：与 adminChannelOpen / config.yml 一致（曾误写 false，管理员私聊指令被静默丢弃）
+        return isAdmin(qq) && config.configBool("admins.respond.private", true);
     }
 
     private boolean groupAllowed(long groupId) {
@@ -392,7 +396,7 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
         bans.forEach((qq, meta) -> {
             var names = binds.store().namesOfQq(qq);
             sb.append("  ").append(qq).append(" · ")
-              .append(fmtTime(Long.parseLong(meta[0])))
+              .append(fmtTime(epochOf(meta[0])))
               .append(meta[1].isEmpty() ? "" : " · " + meta[1])
               .append(names.isEmpty() ? "" : " · 名下: " + String.join("、", names))
               .append('\n');
@@ -597,13 +601,35 @@ public final class ChatMessageHandler implements OneBotEndpoint.MessageListener 
         return r.created() == null ? "?" : r.created().name();
     }
 
+    /**
+     * 纯 ASCII 数字判定，堵两个坑：
+     * 1. Character::isDigit 与 Long.parseLong 都认 Unicode 数字，「解绑 １２３４５」会被
+     *    悄悄当成 QQ 12345；而 拉黑/解拉黑/代绑 走 \d{5,12} 只认 ASCII，同一个号在不同
+     *    指令里行为不一致，这里统一收紧到 ASCII。
+     * 2. 超长数字串（19 位以上）让后面的 parseLong 溢出抛 NumberFormatException，
+     *    而 OneBotEndpoint 是裸调 l.onMessage()，异常没人接，整条消息被吞。
+     */
     private static boolean isNumeric(String s) {
-        return !s.isEmpty() && s.chars().allMatch(Character::isDigit);
+        if (s.isEmpty() || s.length() > MAX_DIGITS) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < '0' || c > '9') return false;
+        }
+        return true;
     }
 
     private static String fmtTime(long epochMilli) {
         return TIME_FMT.format(java.time.Instant.ofEpochMilli(epochMilli)
                 .atZone(java.time.ZoneId.systemDefault()));
+    }
+
+    /** 黑名单时间戳读自存储文件，被手改坏时不该炸掉整条「拉黑列表」。 */
+    private static long epochOf(String raw) {
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     /** 玩家帮助：解绑行按 self-unbind 开关动态取舍（静态文案会误导）。 */

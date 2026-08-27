@@ -6,6 +6,13 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -363,4 +370,68 @@ class BindServiceTest {
         assertEquals("测试", bans.get(10001L)[1]);
         assertEquals(java.util.List.of("Steve"), store2.namesOfQq(10001L));
     }
+    // ---------------- 回归：码位耗尽 / 冷却原子性 / 代绑拉黑 ----------------
+
+    @Test
+    void codeSpaceExhaustionNeverIssuesDuplicate() {
+        apply(new BindSettings.Builder().cooldownSeconds(0)); // codeLength=4 → 码位 1 万
+        Set<String> issued = new HashSet<>();
+        for (int i = 0; i < 10_000; i++) {
+            issued.add(svc.ensureCode(UUID.randomUUID(), "P" + i, now).code());
+        }
+        assertEquals(10_000, issued.size(), "码位占满前不得发出重复码");
+        // 码位已满：仍要发出合法 4 位码，且活跃表里不能有两个 uuid 共用一个码
+        var overflow = svc.ensureCode(UUID.randomUUID(), "Overflow", now + 1);
+        assertEquals(4, overflow.code().length());
+        assertTrue(overflow.code().chars().allMatch(Character::isDigit));
+        var active = svc.activeCodes();
+        assertEquals(active.size(),
+                active.stream().map(BindService.PendingCode::code).distinct().count(),
+                "活跃码必须唯一：重复码 = 可把别人账号绑到自己QQ");
+    }
+
+    @Test
+    void cooldownIsAtomicUnderConcurrentAttempts() throws Exception {
+        apply(new BindSettings.Builder().cooldownSeconds(10));
+        int threads = 32;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        AtomicInteger passed = new AtomicInteger();
+        for (int i = 0; i < threads; i++) {
+            pool.execute(() -> {
+                try {
+                    start.await();
+                    if (svc.checkCooldown(10001L, now) == 0) {
+                        passed.incrementAndGet();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        start.countDown();
+        assertTrue(done.await(10, TimeUnit.SECONDS), "并发冷却测试超时");
+        pool.shutdownNow();
+        assertEquals(1, passed.get(), "同一QQ的并发请求只能有一个穿过冷却");
+    }
+
+    @Test
+    void adminBindRefusedWhenPlayerHasBannedQq() {
+        apply(new BindSettings.Builder().cooldownSeconds(0)
+                .limitPolicy(BindSettings.LimitPolicy.REPLACE));
+        UUID u = UUID.randomUUID();
+        assertEquals(BindService.Outcome.SUCCESS,
+                svc.adminBind(u, "Steve", 10001L, now).outcome());
+        svc.qqban(10001L, "刷屏");
+        // 管理员代绑换号 = 变相解封；REPLACE 策略还会顶掉作案底那条
+        assertEquals(BindService.Outcome.QQ_BANNED,
+                svc.adminBind(u, "Steve", 10002L, now + 1000).outcome());
+        var rows = svc.findByUuid(u);
+        assertEquals(1, rows.size(), "案底必须留着");
+        assertEquals(10001L, rows.get(0).qq());
+    }
+
 }
